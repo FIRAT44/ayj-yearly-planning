@@ -25,11 +25,10 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
         "tabs": {
-          "📋 Planlama": ["Plan Oluştur","Gerçekleşen Giriş"],
-          "📊 Analiz ve Raporlar": ["Haftalık Program","Dönem Raporu","Tarihsel Analiz","Gelişim Takibi"],
-          "📂 Naeron İşlemleri": ["Naeron Verileri Filtrele"]
+          "📋 Planlama": ["Gerçekleşen Giriş"],
+          "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
         }
       }
     }
