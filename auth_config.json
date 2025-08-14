@@ -1,0 +1,37 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "name": "Yönetici",
+      "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+      "role": "admin",
+      "permissions": {
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","deneme","Firebase Bağlantısı"],
+        "tabs": {
+          "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler"],
+          "📊 Analiz ve Raporlar": ["Haftalık Program","Kayıtlı Haftalık Plan","Otomatik Planlama","Kayıtlı Planlar","Dönem Raporu","Tarihsel Analiz","Gelişim Takibi","Tekil Görev","Coklu Görev","İhtiyaç Analizi","Tüm Veriler"],
+          "📂 Naeron İşlemleri": ["Naeron Yükle","Naeron Verileri Filtrele","API ile NAERON veri çeekme"],
+          "🤖 Revize İşlemleri": ["Bireysel Revize Paneli","Genel tarama","Takvimden Revize","İleriden Giden Plan"],
+          "Meteoroloji Verileri": ["Meteoroloji Verileri"],
+          "🔄 FAMS → Naeron": ["FAMS → Naeron"],
+          "deneme": ["deneme"],
+          "Firebase Bağlantısı": ["Firebase Arayüzü"]
+        }
+      }
+    },
+    {
+      "username": "SO",
+      "name": "Eğitmen",
+      "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+      "role": "instructor",
+      "permissions": {
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri"],
+        "tabs": {
+          "📋 Planlama": ["Plan Oluştur","Gerçekleşen Giriş"],
+          "📊 Analiz ve Raporlar": ["Haftalık Program","Dönem Raporu","Tarihsel Analiz","Gelişim Takibi"],
+          "📂 Naeron İşlemleri": ["Naeron Verileri Filtrele"]
+        }
+      }
+    }
+  ]
+}
