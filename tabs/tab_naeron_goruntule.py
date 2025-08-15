@@ -107,7 +107,13 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC A-12 PT'   AND \"Öğrenci Pilot\" LIKE '132%'",
                     # ... diğer 132.* MCC-A-* görevleri benzer biçimde ...
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '127%'",
-                    "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '128%'"
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '128%'",
+                    """
+UPDATE naeron_ucuslar
+SET "Öğrenci Pilot" = TRIM(SUBSTR("Öğrenci Pilot", 1, INSTR("Öğrenci Pilot", ' - ') - 1))
+WHERE "Öğrenci Pilot" LIKE 'OZ% - %'
+  AND INSTR("Öğrenci Pilot", ' - ') > 0
+"""
                 ]
                 # Saat sütunlarını da tek sorguda düzelt
                 sql_statements.append("""

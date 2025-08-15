@@ -5,12 +5,30 @@ import sqlite3
 from datetime import timedelta
 from xlsxwriter.utility import xl_range
 from io import BytesIO
+import re
+import numpy as np
 
 from tabs.utils.ozet_utils2 import (
     ozet_panel_verisi_hazirla_batch,
     ogrenci_kodu_ayikla,
 )
-
+today = pd.to_datetime(pd.Timestamp.today().date())
+def _last_flight_style(val):
+    t = pd.to_datetime(val, errors="coerce")
+    if pd.isna(t):
+        return ""  # tarih yoksa renklendirme yok
+    # gelecekteki tarihleri boyama (negatif gün) -> boş bırak
+    if t > today:
+        return ""
+    days = (today - t.normalize()).days
+    if days >= 15:
+        # kırmızımsı arka plan, okunaklılık için koyu yazı
+        return "background-color:#ffcccc; color:#000; font-weight:600;"
+    elif days >= 10:
+        # sarı arka plan
+        return "background-color:#fff3cd; color:#000;"
+    else:
+        return ""
 # --- EKLE: en üste, importların altına ---
 def _hard_refresh():
     # Tüm data ve resource cache'lerini temizle
@@ -31,6 +49,132 @@ def _cached_batch_fetcher(conn, kodlar, cache_buster:int=0):
     def _run(_kodlar, _buster):
         return ozet_panel_verisi_hazirla_batch(_kodlar, conn)
     return _run(kodlar, cache_buster)
+
+
+def _fmt_hhmm(val):
+    """Timedelta / HH:MM(/SS) / sayısal (saat veya dakika) -> ±HH:MM"""
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return "-"
+
+    # Timedelta
+    if isinstance(val, pd.Timedelta):
+        total_seconds = val.total_seconds()
+        neg = total_seconds < 0
+        total_seconds = abs(total_seconds)
+        h = int(total_seconds // 3600)
+        m = int(round((total_seconds % 3600) / 60))
+        return f"{'-' if neg else ''}{h:02}:{m:02}"
+
+    # Dize: HH:MM[:SS]
+    if isinstance(val, str):
+        s = val.strip()
+        if not s:
+            return "-"
+        m = re.match(r"^(-?\d{1,3}):(\d{2})(?::\d{2})?$", s)
+        if m:
+            sign = "-" if s.startswith("-") else ""
+            hh = int(m.group(1).lstrip("-"))
+            mm = int(m.group(2))
+            return f"{sign}{hh:02}:{mm:02}"
+        # tanınmadıysa olduğu gibi döndür
+        return s
+
+    # Sayısal: saat mı, dakika mı?
+    if isinstance(val, (int, float)):
+        # Heuristik: mutlak değer >= 24 ise (özellikle int) dakika kabul et,
+        # yoksa saat kabul edip 60 ile çevir.
+        if isinstance(val, int) or abs(val) >= 24:
+            minutes = int(round(val))              # dakika varsay
+        else:
+            minutes = int(round(val * 60))         # saat -> dakika
+        neg = minutes < 0
+        minutes = abs(minutes)
+        h = minutes // 60
+        m = minutes % 60
+        return f"{'-' if neg else ''}{h:02}:{m:02}"
+
+    # Diğer tipler
+    return str(val)
+
+
+def _sum_hhmm(series: pd.Series) -> int:
+    """HH:MM[/SS] veya saat ondalıkları karışık gelebilir; tamamını dakikaya çevirip toplar."""
+    total = 0
+    if series is None:
+        return 0
+    for x in series.fillna("00:00").astype(str):
+        s = x.strip()
+        m = re.match(r"^(-?\d{1,3}):(\d{2})(?::\d{2})?$", s)
+        if m:
+            sign = -1 if s.startswith("-") else 1
+            h = int(m.group(1).lstrip("-")); mm = int(m.group(2))
+            total += sign * (h*60 + mm)
+        else:
+            try:
+                f = float(s)  # saat ondalık
+                total += int(round(f * 60))
+            except:
+                pass
+    return total
+
+def _extract_toplam_fark_from_batch_tuple(tup, df_ogrenci: pd.DataFrame | None = None):
+    """Batch çıktısından 'fark'ı güvenle bul; yoksa df_ogrenci’den Plan - Gerçekleşen hesapla."""
+    PRIORITY_KEYS = ["toplam_fark", "fark_toplam", "genel_fark", "fark", "total_diff", "sum_diff"]
+
+    # 1) Düz/özete gömülü anahtarlar
+    if isinstance(tup, dict):
+        for k in PRIORITY_KEYS:
+            if k in tup:
+                return tup[k]
+        if "ozet" in tup and isinstance(tup["ozet"], dict):
+            for k in PRIORITY_KEYS:
+                if k in tup["ozet"]:
+                    return tup["ozet"][k]
+
+    # 2) Derin gezinme: anahtar adı 'fark' içereni ara
+    def _walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if "fark" in str(k).lower():
+                    return v
+                found = _walk(v)
+                if found is not None:
+                    return found
+        elif isinstance(o, (list, tuple)):
+            for el in o:
+                found = _walk(el)
+                if found is not None:
+                    return found
+        return None
+
+    val = _walk(tup)
+    if val is not None:
+        return val
+
+    # 3) Fallback: df_ogrenci’den Plan - Gerçekleşen hesapla (pozitif => eksik)
+    if df_ogrenci is not None and not df_ogrenci.empty:
+        plan_cols = ["Planlanan", "planlanan", "Plan Süresi", "plan_sure", "plan", "Plan", "sure", "Sure"]
+        real_cols = ["Gerçekleşen", "gerçekleşen", "gerceklesen", "Block Time", "block", "block_time"]
+
+        def _sum_from(cols):
+            for c in cols:
+                if c in df_ogrenci.columns:
+                    return _sum_hhmm(df_ogrenci[c])
+            return 0
+
+        plan_min = _sum_from(plan_cols)
+        real_min = _sum_from(real_cols)
+        diff_min = plan_min - real_min  # (+) eksik, (-) fazla
+        return pd.Timedelta(minutes=diff_min)
+
+    return None
+
+
+
+
+
+
+
 
 def tab_ogrenci_ozet_sadece_eksik(st, conn):
     st.markdown("---")
@@ -156,37 +300,97 @@ def tab_ogrenci_ozet_sadece_eksik(st, conn):
     # BATCH: tek seferde hepsini hazırla (cache'li)
     sonuc = _cached_batch_fetcher(conn, tuple(sorted(ogrenciler_aralik)), st.session_state.weekly_cache_buster)
 
+    import sqlite3
+    # --- Naeron verisini oku ve kodları ayıkla ---
+    conn_naeron = sqlite3.connect("naeron_kayitlari.db")
+    df_naeron_raw = pd.read_sql_query("SELECT * FROM naeron_ucuslar", conn_naeron)
+    conn_naeron.close()
+
+    # Kodları senin fonksiyonla ayıkla
+    df_naeron_raw["ogrenci_kodu"] = df_naeron_raw["Öğrenci Pilot"].apply(ogrenci_kodu_ayikla)
+
+    # Tarih formatı
+    df_naeron_raw["Tarih"] = pd.to_datetime(df_naeron_raw["Uçuş Tarihi 2"], errors="coerce")
+
+
+    # --- (DÖNGÜDEN ÖNCE) NAERON VERİSİNİ HAZIRLA ---
+    try:
+        conn_naeron = sqlite3.connect("naeron_kayitlari.db", check_same_thread=False)
+        df_naeron_raw = pd.read_sql_query("SELECT * FROM naeron_ucuslar", conn_naeron)
+        conn_naeron.close()
+    except Exception as e:
+        st.error(f"Naeron verisi okunamadı: {e}")
+        df_naeron_raw = pd.DataFrame()
+
+    # Naeron kolon doğrulama + hazırlama
+    gerekli_kolonlar = {"Öğrenci Pilot", "Uçuş Tarihi 2", "Görev"}
+    if not df_naeron_raw.empty and gerekli_kolonlar.issubset(df_naeron_raw.columns):
+        # Öğrenci kodunu SENİN fonksiyonla ayıkla
+        df_naeron_raw["ogrenci_kodu"] = df_naeron_raw["Öğrenci Pilot"].apply(ogrenci_kodu_ayikla)
+        # Tarihi parse et
+        df_naeron_raw["Tarih"] = pd.to_datetime(df_naeron_raw["Uçuş Tarihi 2"], errors="coerce")
+        df_naeron_raw = df_naeron_raw.dropna(subset=["Tarih"])
+    else:
+        # Boş güvenliği (kolonlar yoksa da buraya düşsün)
+        df_naeron_raw = pd.DataFrame(columns=["ogrenci_kodu", "Tarih", "Görev"])
+
     kayitlar = []
     last_dates = {}
+    last_tasks = {}
+    toplam_fark_map = {}   # <-- YENİ
 
     for kod in ogrenciler_aralik:
         tup = sonuc.get(kod)
         if not tup:
             continue
-        df_ogrenci, phase_toplamlar, toplam_plan, toplam_gercek, toplam_fark, df_naeron_eksik, last_naeron_date = tup
+        df_ogrenci, *_ = tup
         if df_ogrenci is None or df_ogrenci.empty:
             continue
-        last_dates[kod] = last_naeron_date or "-"
 
-        sec = df_ogrenci[(df_ogrenci["plan_tarihi"] >= pd.to_datetime(baslangic)) &
-                         (df_ogrenci["plan_tarihi"] <= pd.to_datetime(bitis))].copy()
+
+
+
+        # 🆕 Toplam Fark (batch'ten) — robust çıkar
+        tf_raw = _extract_toplam_fark_from_batch_tuple(tup, df_ogrenci)
+        toplam_fark_map[kod] = _fmt_hhmm(tf_raw)
+
+
+
+
+
+
+        # 🆕 Naeron’dan son uçuş bilgisi (görev ne olursa olsun)
+        if not df_naeron_raw.empty:
+            df_naeron_kod = df_naeron_raw[df_naeron_raw["ogrenci_kodu"] == kod]
+            if not df_naeron_kod.empty:
+                son_kayit = df_naeron_kod.sort_values("Tarih").iloc[-1]
+                last_dates[kod] = pd.to_datetime(son_kayit["Tarih"], errors="coerce")  # Timestamp sakla
+                last_tasks[kod] = str(son_kayit.get("Görev", "-"))
+            else:
+                last_dates[kod] = pd.NaT
+                last_tasks[kod] = "-"
+        else:
+            last_dates[kod] = pd.NaT
+            last_tasks[kod] = "-"
+
+        # Seçili tarih aralığındaki plan satırları
+        sec = df_ogrenci[
+            (df_ogrenci["plan_tarihi"] >= pd.to_datetime(baslangic)) &
+            (df_ogrenci["plan_tarihi"] <= pd.to_datetime(bitis))
+        ].copy()
         if sec.empty:
             continue
+
         sec["gorev_durum"] = sec.apply(_gorev_durum_string, axis=1)
         sec["ogrenci_kodu"] = kod
-
-        # PIF 20-28 bitti ise haftalık aralıkta eksik durumlu PIF'leri "bitti" olarak işaretlemek istersen:
-        if "_pif_bitti" in sec.columns and sec["_pif_bitti"].any():
-            pass  # Görsel etiketlemeyi dilerse burada genişletebilirsin.
-
-        kayitlar.append(sec[["ogrenci_kodu","plan_tarihi","gorev_durum"]])
+        kayitlar.append(sec[["ogrenci_kodu", "plan_tarihi", "gorev_durum"]])
 
     if not kayitlar:
         st.info("Bu aralık için gösterilecek satır bulunamadı.")
-        return
+        st.stop()
+
     haftalik = pd.concat(kayitlar, ignore_index=True)
 
-    # Pivot
     pivot = haftalik.pivot_table(
         index="ogrenci_kodu",
         columns="plan_tarihi",
@@ -194,12 +398,56 @@ def tab_ogrenci_ozet_sadece_eksik(st, conn):
         aggfunc=lambda x: "\n".join(sorted(set(x))),
         fill_value="-"
     ).sort_index(axis=1)
-    pivot["Son Uçuş Tarihi (Naeron)"] = [last_dates.get(k, "-") for k in pivot.index]
 
-        # "Son Uçuş Tarihi (Naeron)" başa al
-    cols = ["Son Uçuş Tarihi (Naeron)"] + [c for c in pivot.columns if c != "Son Uçuş Tarihi (Naeron)"]
-    pivot = pivot[cols]
-    st.dataframe(pivot, use_container_width=True)
+    # --- Naeron’dan alınan son uçuş verileri ---
+    # Tarihi yazdırırken string'e çevir (YYYY-MM-DD), yoksa "-"
+# --- Naeron’dan alınan son uçuş verileri (pozisyona göre hizala) ---
+    def _fmt_date_safe(x):
+        try:
+            t = pd.to_datetime(x, errors="coerce")
+            return t.strftime("%Y-%m-%d") if pd.notna(t) else "-"
+        except Exception:
+            return "-"
+
+    son_tarih_list = [_fmt_date_safe(last_dates.get(k, pd.NaT)) for k in pivot.index]
+    son_gorev_list = [str(last_tasks.get(k, "-")) for k in pivot.index]
+    toplam_fark_list = [_fmt_hhmm(toplam_fark_map.get(k)) for k in pivot.index]  # <-- YENİ
+
+    # Sütunları başa yerleştir (liste veriyoruz, reindex yok → hata yok)
+    pivot.insert(0, "Son Görev İsmi", son_gorev_list)
+    pivot.insert(0, "Son Uçuş Tarihi (Naeron)", son_tarih_list)
+    pivot.insert(2, "Toplam Fark", toplam_fark_list)  # <-- YENİ
+
+
+    # (Opsiyonel) En güncel uçuşu en üstte görmek istersen:
+    # pivot = pivot.iloc[pd.Series(son_tarih_seri).sort_values(ascending=False).index]
+
+    # Sadece "Son Uçuş Tarihi (Naeron)" sütununu boya
+    styled = pivot.style.applymap(
+        _last_flight_style,
+        subset=pd.IndexSlice[:, ["Son Uçuş Tarihi (Naeron)"]]
+    )
+
+    st.dataframe(styled, use_container_width=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # Excel export (renkli + tarayıcıdan indir)
     if st.button("✅ Excel'i hazırla (haftalık görünüm - renkli)"):
