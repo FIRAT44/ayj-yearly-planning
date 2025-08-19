@@ -182,7 +182,7 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
     with c3: st.markdown(f"<div class='kpi'>🎯 Hedef Kişi<br><span style='font-size:28px'>{toplam_hedef}</span></div>", unsafe_allow_html=True)
 
     # ---------- Sekmeler ----------
-    sek1, sek2, sek3, sek4, sek5 = st.tabs(["Özet", "Üyeler", "Birleşik Liste", "Dışa Aktar","Tablo"])
+    sek1, sek2 = st.tabs(["Özet","Dönem Tablo Görüntüle"])
 
     # ========== SEKME 1: ÖZET ==========
     with sek1:
@@ -255,129 +255,171 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
                             unsafe_allow_html=True
                         )
 
-        # Tablo (modern başlıklarla)
-        try:
-            cfg = {
-                "grup_no": st.column_config.NumberColumn("Grup No", format="%d"),
-                "grup_adi": st.column_config.TextColumn("Grup Adı"),
-                "hedef_kisi": st.column_config.NumberColumn("Hedef", format="%d"),
-                "atanan": st.column_config.NumberColumn("Atanan", format="%d"),
-                "Fark (Atanan - Hedef)": st.column_config.NumberColumn("Fark", format="%d"),
-            }
-        except Exception:
-            cfg = None
 
-        st.dataframe(
-            ozet[["grup_no","grup_adi","hedef_kisi","atanan","Fark (Atanan - Hedef)"]]
-                .sort_values("grup_no", na_position="last")
-                .rename(columns={
-                    "grup_no":"Grup No",
-                    "grup_adi":"Grup Adı",
-                    "hedef_kisi":"Hedef",
-                    "atanan":"Atanan",
-                    "Fark (Atanan - Hedef)":"Fark"
-                }),
-            use_container_width=True,
-            hide_index=True,
-            column_config=cfg
+
+
+    with sek2:
+
+        
+
+
+        # --- ÖZEL TABLO: "E-1..E-4 Başlama/Bitiş" (seçili dönem + grup) ---
+        st.markdown("---")
+        st.markdown("### 📋 Grup İlerlemesi — E‑1..E‑4 Başlama/Bitiş (Plan verisine göre)")
+
+        import re
+        from tabs.utils.ozet_utils import ozet_panel_verisi_hazirla  # senin fonksiyonunun yolu buysa bırak, değilse düzelt
+
+        # 1) Seçili dönem zaten üstte seçilmişti: donem_sec
+        #    Bu sekmede de kullanabilmek için o değişken yoksa tekrar soralım:
+        try:
+            _donem_kullan = donem_sec
+        except NameError:
+            # uçuş planından dönemleri çek
+            try:
+                _df_donem = pd.read_sql_query("SELECT DISTINCT donem FROM ucus_planlari", conn)
+                donemler2 = _df_donem["donem"].dropna().astype(str).sort_values().tolist()
+            except Exception:
+                donemler2 = []
+            if not donemler2:
+                st.info("Dönem bulunamadı.")
+                st.stop()
+            _donem_kullan = st.selectbox("📆 Dönem (tablo için)", options=donemler2, key="grp_e_tab_donem")
+
+        # 2) Bu döneme ait grupları listele
+        try:
+            df_gruplar_sel = pd.read_sql_query(
+                "SELECT donem, grup_no, grup_adi FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
+                conn, params=[_donem_kullan]
+            )
+        except Exception:
+            df_gruplar_sel = pd.DataFrame(columns=["donem","grup_no","grup_adi"])
+
+        if df_gruplar_sel.empty:
+            st.info("Bu döneme ait grup kaydı yok.")
+            st.stop()
+
+        grup_ops = df_gruplar_sel["grup_no"].dropna().astype(int).tolist()
+        grup_no_sec = st.selectbox("👥 Grup seç", options=grup_ops, key="grp_e_tab_no")
+
+        grup_adi = df_gruplar_sel.set_index("grup_no").get("grup_adi", pd.Series()).get(grup_no_sec, "")
+        grup_baslik = f"{_donem_kullan}. DÖNEM {grup_no_sec}. GRUP ({grup_adi if pd.notna(grup_adi) and str(grup_adi).strip() else f'{grup_no_sec}. GRUP'})"
+
+        # 3) Bu grup üyelerini çek (öğrenci kodu/ismi)
+        try:
+            df_u = pd.read_sql_query(
+                "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
+                conn, params=[_donem_kullan, int(grup_no_sec)]
+            )
+        except Exception:
+            df_u = pd.DataFrame(columns=["ogrenci"])
+
+        if df_u.empty:
+            st.warning("Bu grupta öğrenci bulunamadı.")
+            st.stop()
+
+        ogr_list = df_u["ogrenci"].dropna().astype(str).tolist()
+
+        # 4) Yardımcılar
+        def _norm_task(s: str) -> str:
+            return re.sub(r"[^\w]", "", str(s)).upper()
+
+        def _contains_e(g_name: str, e_label: str) -> bool:
+            # E-1, E1, E 1 vb eşleşsin
+            pat = re.compile(rf"\bE[-\s]*{e_label}\b", re.IGNORECASE)
+            return bool(pat.search(str(g_name)))
+
+        def _ilk_son_tarih(df_ogr: pd.DataFrame, e_label: str):
+            if df_ogr.empty: 
+                return None, None
+            m = df_ogr["gorev_ismi"].apply(lambda x: _contains_e(x, e_label))
+            dfo = df_ogr[m].sort_values("plan_tarihi")
+            if dfo.empty:
+                return None, None
+            return dfo["plan_tarihi"].min(), dfo["plan_tarihi"].max()
+
+        def _fmt_dt(x):
+            if pd.isna(x) or x is None:
+                return ""
+            try:
+                return pd.to_datetime(x).strftime("%d.%m.%Y")
+            except Exception:
+                return str(x)
+
+        # 5) Her öğrenci için ozet_panel_verisi_hazirla → E‑1..E‑4 başlama/bitisleri çıkar
+        rows = []
+        for ogr in ogr_list:
+            try:
+                df_ogrenci, *_ = ozet_panel_verisi_hazirla(ogr, conn, st=st)
+            except Exception:
+                df_ogrenci = pd.DataFrame()
+
+            # sadece seçili dönem satırları
+            if not df_ogrenci.empty and "donem" in df_ogrenci.columns:
+                df_ogrenci = df_ogrenci[df_ogrenci["donem"] == _donem_kullan].copy()
+
+            e1s, e1e = _ilk_son_tarih(df_ogrenci, "1")
+            e2s, e2e = _ilk_son_tarih(df_ogrenci, "2")
+            e3s, e3e = _ilk_son_tarih(df_ogrenci, "3")
+            e4s, e4e = _ilk_son_tarih(df_ogrenci, "4")
+
+            rows.append({
+                ("Grup", "", ""): ogr,                                   # sol ilk sütun (öğrenci)
+                ("DA-20 IR SIM", "E-1", "Başlama"): _fmt_dt(e1s),
+                ("DA-20 IR SIM", "E-2", "Bitiş"):   _fmt_dt(e2e),
+                ("DA-20 PIF PIF-1", "E-3", "Başlama"): _fmt_dt(e3s),
+                ("DA-20 PIF", "E-4", "Bitiş"):        _fmt_dt(e4e),
+            })
+
+        if not rows:
+            st.info("Gösterilecek kayıt bulunamadı.")
+            st.stop()
+
+        # 6) Çok seviyeli kolon yap ve tabloyu HTML olarak çiz (çok satırlı başlık için)
+        cols = pd.MultiIndex.from_tuples([
+            ("Grup", "", ""),
+            ("DA-20 IR SIM", "E-1", "Başlama"),
+            ("DA-20 IR SIM", "E-2", "Bitiş"),
+            ("DA-20 PIF PIF-1", "E-3", "Başlama"),
+            ("DA-20 PIF", "E-4", "Bitiş"),
+        ])
+        df_table = pd.DataFrame(rows, columns=cols)
+
+        # Üst sol köşeye grup/dönem başlığını yerleştirmek için ilk hücrenin üzerine yazı koyalım
+        st.markdown(
+            f"<div style='padding:.4rem .6rem; "
+            f"border-radius:.5rem; font-weight:800; display:inline-block; margin-bottom:.5rem;'>{grup_baslik}</div>",
+            unsafe_allow_html=True
         )
 
-    # ========== SEKME 2: ÜYELER ==========
-    with sek2:
-        st.markdown("#### 👥 Grup Üyeleri")
-        if uyeler.empty:
-            st.info("Bu dönemde gruplara atanmış üye bulunmuyor.")
-            joined = pd.DataFrame(columns=["grup_no","grup_adi","Üyeler"])
-        else:
-            colf1, colf2 = st.columns([1,2])
-            with colf1:
-                grup_ops = ["(Tümü)"] + [str(int(x)) for x in sorted(ozet["grup_no"].dropna().unique())] if not ozet.empty else ["(Tümü)"]
-                grup_filtre = st.selectbox("Grup filtresi", grup_ops, key="grup_filtre")
-            with colf2:
-                arama = st.text_input("🔎 Öğrencide ara", placeholder="Örn: G_132 veya isim")
+        # HTML tablo (okunaklı stil)
+        html = df_table.to_html(index=False, escape=False)
+        html = html.replace(
+            "<table border=\"1\" class=\"dataframe\">",
+            "<table class=\"dataframe\" style='border-collapse:collapse; width:100%; font-family:Inter,system-ui,sans-serif; color:#fff;'>"
+        ).replace(
+            "<th>", "<th style='color:#fff; padding:.45rem; text-align:center; border:1px solid #444;'>"
+        ).replace(
+            "<td>", "<td style='color:#fff; padding:.45rem; border:1px solid #444; text-align:center;'>"
+        )
 
-            uyeler_show = uyeler.merge(
-                ozet[["grup_no","grup_adi"]].drop_duplicates(),
-                on="grup_no", how="left"
-            ).sort_values(["grup_no","ogrenci"])
+        st.markdown(html, unsafe_allow_html=True)
 
-            if grup_filtre != "(Tümü)":
-                try:
-                    gno = int(grup_filtre)
-                    uyeler_show = uyeler_show[uyeler_show["grup_no"] == gno]
-                except:
-                    pass
-
-            if arama.strip():
-                s = arama.strip().lower()
-                uyeler_show = uyeler_show[uyeler_show["ogrenci"].str.lower().str.contains(s, na=False)]
-
-            st.dataframe(
-                uyeler_show[["grup_no","grup_adi","ogrenci"]]
-                    .rename(columns={"grup_no":"Grup No","grup_adi":"Grup Adı","ogrenci":"Öğrenci"}),
-                use_container_width=True,
-                hide_index=True
-            )
-
-    # ========== SEKME 3: BİRLEŞİK LİSTE ==========
-    with sek3:
-        st.markdown("#### 📋 Gruba Göre Birleştirilmiş Liste")
-        if uyeler.empty:
-            st.info("Birleştirilmiş liste için üye bulunmuyor.")
-            joined = pd.DataFrame(columns=["grup_no","grup_adi","Üyeler"])
-        else:
-            joined = (
-                uyeler.merge(ozet[["grup_no","grup_adi"]].drop_duplicates(), on="grup_no", how="left")
-                .groupby(["grup_no","grup_adi"], dropna=False)["ogrenci"]
-                .apply(lambda s: "\n".join(sorted([str(x) for x in s.tolist()])))
-                .reset_index(name="Üyeler")
-                .sort_values("grup_no", na_position="last")
-            )
-            st.dataframe(joined, use_container_width=True, hide_index=True)
-
-            with st.expander("📄 Düz metin olarak kopyala"):
-                st.code("\n\n".join([f"#{int(r.grup_no)} - {r.grup_adi}\n{r.Üyeler}" for _, r in joined.iterrows()]))
-
-    # ========== SEKME 4: DIŞA AKTAR ==========
-    with sek4:
-        st.markdown("#### 📥 Excel Dışa Aktar")
-        buf = io.BytesIO()
-        last_exc = None
-        for engine in ("xlsxwriter", "openpyxl"):
-            try:
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine=engine) as writer:
-                    (ozet[["grup_no","grup_adi","hedef_kisi","atanan","Fark (Atanan - Hedef)"]]
-                     .sort_values("grup_no", na_position="last")
-                     .rename(columns={
-                         "grup_no":"Grup No","grup_adi":"Grup Adı","hedef_kisi":"Hedef","atanan":"Atanan","Fark (Atanan - Hedef)":"Fark"})
-                     ).to_excel(writer, index=False, sheet_name="Gruplar_Ozet")
-
-                    if not uyeler.empty:
-                        (uyeler.merge(ozet[["grup_no","grup_adi"]].drop_duplicates(), on="grup_no", how="left")
-                         [["grup_no","grup_adi","ogrenci"]]
-                         .rename(columns={"grup_no":"Grup No","grup_adi":"Grup Adı","ogrenci":"Öğrenci"})
-                         ).to_excel(writer, index=False, sheet_name="Uyeler")
-
-                    if 'joined' in locals() and not joined.empty:
-                        joined.to_excel(writer, index=False, sheet_name="Gruplar_Birlesik")
-                break
-            except Exception as e:
-                last_exc = e
-                continue
-
-        if last_exc and buf.getbuffer().nbytes == 0:
-            st.error(f"Excel oluşturulamadı: {last_exc}")
-        else:
-            st.download_button(
-                "📦 Excel olarak indir",
-                data=buf.getvalue(),
-                file_name=f"donem_gruplari_{donem_sec}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="grp_excel_indir"
-            )
+        # 7) Excel indirme
+        buf_e = io.BytesIO()
+        with pd.ExcelWriter(buf_e, engine="xlsxwriter") as writer:
+            # Excel multiindex başlıklar düzgün gitsin
+            df_x = df_table.copy()
+            # sütun isimlerini tek satıra indir (kategori | görev | tip)
+            df_x.columns = [" | ".join([c for c in col if c]) for col in df_x.columns.values]
+            df_x.to_excel(writer, index=False, sheet_name="Grup_E_Tablosu")
+        st.download_button(
+            "📥 Excel (E‑1..E‑4 Başlama/Bitiş)",
+            data=buf_e.getvalue(),
+            file_name=f"{_donem_kullan}_grup_{grup_no_sec}_E1E4_baslama_bitis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="grp_e_excel"
+        )
 
 
-    with sek5:
-        from tabs.DonemGrupları.tab_donem_listesi import tab_donem_listesi
-        tab_donem_listesi(st)
+

@@ -25,7 +25,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönemler"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş"],
           "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
@@ -38,7 +38,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönemler"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş"],
           "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
@@ -51,7 +51,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönemler"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş"],
           "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
