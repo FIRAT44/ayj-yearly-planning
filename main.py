@@ -165,7 +165,7 @@ if not menu:
     st.stop()
 
 if menu == "📋 Planlama":
-    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler"]
+    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"]
     tab_sec = st.radio("📋 Planlama Sekmesi", _allowed_tabs("📋 Planlama", planlama_all_tabs), horizontal=True)
     
     
@@ -177,6 +177,10 @@ if menu == "📋 Planlama":
     elif tab_sec == "Dönemler":
         from tabs.DonemGrupları.donemGoruntule import tab_donem_grup_tablosu
         tab_donem_grup_tablosu(st, conn)
+
+    elif tab_sec == "Eğitim Süresi":
+        from tabs.GenelPlan.sureAsim import sureAsim
+        sureAsim(st)
 
 
 

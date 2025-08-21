@@ -8,7 +8,7 @@
       "permissions": {
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","deneme","Firebase Bağlantısı"],
         "tabs": {
-          "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler"],
+          "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"],
           "📂 Naeron İşlemleri": ["Naeron Yükle","Naeron Verileri Filtrele","API ile NAERON veri çeekme"],
           "🤖 Revize İşlemleri": ["Bireysel Revize Paneli","Genel tarama","Takvimden Revize","İleriden Giden Plan"],
@@ -27,7 +27,7 @@
       "permissions": {
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
         "tabs": {
-          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
+          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
@@ -40,7 +40,7 @@
       "permissions": {
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
         "tabs": {
-          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
+          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
@@ -53,7 +53,7 @@
       "permissions": {
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
         "tabs": {
-          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
+          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
