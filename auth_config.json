@@ -9,7 +9,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","deneme","Firebase Bağlantısı"],
         "tabs": {
           "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler"],
-          "📊 Analiz ve Raporlar": ["Haftalık Program","Kayıtlı Haftalık Plan","Otomatik Planlama","Kayıtlı Planlar","Dönem Raporu","Tarihsel Analiz","Gelişim Takibi","Tekil Görev","Coklu Görev","İhtiyaç Analizi","Tüm Veriler"],
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"],
           "📂 Naeron İşlemleri": ["Naeron Yükle","Naeron Verileri Filtrele","API ile NAERON veri çeekme"],
           "🤖 Revize İşlemleri": ["Bireysel Revize Paneli","Genel tarama","Takvimden Revize","İleriden Giden Plan"],
           "Meteoroloji Verileri": ["Meteoroloji Verileri"],
@@ -28,7 +28,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
-          "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
     },
@@ -41,7 +41,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönemler"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
-          "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
     },
@@ -54,7 +54,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönemler"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler"],
-          "📊 Analiz ve Raporlar": ["Haftalık Program","Tarihsel Analiz","Gelişim Takibi"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
         }
       }
     }

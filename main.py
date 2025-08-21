@@ -18,9 +18,9 @@ from tabs.tab_donem_raporu import tab_donem_raporu
 from tabs.tab_tarihsel_analiz import tab_tarihsel_analiz
 from tabs.tab_ogrenci_gelisim import tab_ogrenci_gelisim
 from tabs.tab_tekil_gorev import tekil_gorev
-from tabs.tab_coklu_gorev import tab_coklu_gorev
+
 from tabs.tab_ihtiyac_analizi import tab_ihtiyac_analizi
-from tabs.tab_tum_veriler import tab_tum_veriler
+
 from tabs.tab_naeron_yukle import tab_naeron_yukle
 from tabs.tab_naeron_goruntule import tab_naeron_goruntule
 
@@ -200,37 +200,25 @@ if menu == "📋 Planlama":
     
 
 elif menu == "📊 Analiz ve Raporlar":
-    analiz_all_tabs = ["Haftalık Program","Kayıtlı Haftalık Plan","Otomatik Planlama","Kayıtlı Planlar","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev","Coklu Görev", "İhtiyaç Analizi", "Tüm Veriler"]
+    analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
     tab_sec = st.radio("📊 Rapor ve Analiz Sekmesi", _allowed_tabs("📊 Analiz ve Raporlar", analiz_all_tabs), horizontal=True)
     # (Aşağıdaki if-elif blokların aynı kalsın)
     
     
+    if tab_sec == "Analiz İşlemleri Sayfası":
+        #st.subheader("📊 Analiz İşlemleri Sayfası")
+        st.write("Bu sekme, analiz işlemleri için genel bir sayfa olarak kullanılacaktır.")
+        
+        # Burada analiz işlemleri için genel bir sayfa oluşturulabilir.
     
     
-    if tab_sec == "Haftalık Program":
+    elif tab_sec == "Haftalık Program":
         conn_plan = sqlite3.connect("ucus_egitim.db", check_same_thread=False)
         conn_naeron = sqlite3.connect("naeron_kayitlari.db", check_same_thread=False)
         tab_ogrenci_ozet_sadece_eksik(st, conn_plan)
     
-    elif tab_sec == "Otomatik Planlama":
-        from tabs.otomatikPlanlama.autoPlan import haftalik_ucus_akilli_program
-        conn_plan = sqlite3.connect("ucus_egitim.db", check_same_thread=False)
-        conn_naeron = sqlite3.connect("naeron_kayitlari.db", check_same_thread=False)
-        haftalik_ucus_akilli_program(conn_plan, conn_naeron)
 
-    elif tab_sec == "Kayıtlı Planlar":
-        st.subheader("📋 Kayıtlı Planlar")
-        from tabs.otomatikPlanlama.kayitli_planlar import main as kayitli_planlar_main
-        kayitli_planlar_main()
-
-    elif tab_sec == "Kayıtlı Haftalık Plan":
-        from tabs.haftalık_plan.kayitli_haftalik_tablolari_goster import kayitli_haftalik_tablolari_goster
-        conn_plan = sqlite3.connect("ucus_egitim.db", check_same_thread=False)
-        conn_naeron = sqlite3.connect("naeron_kayitlari.db", check_same_thread=False)
-        kayitli_haftalik_tablolari_goster(conn_plan, conn_naeron)
-        
-        
-        
+    
     elif tab_sec == "Dönem Raporu":
         tab_donem_raporu(st, conn)
     elif tab_sec == "Tarihsel Analiz":
@@ -240,12 +228,24 @@ elif menu == "📊 Analiz ve Raporlar":
 
     elif tab_sec == "Tekil Görev":
         tekil_gorev(conn)
-    elif tab_sec == "Coklu Görev":
-        tab_coklu_gorev(conn)
+
     elif tab_sec == "İhtiyaç Analizi":
         tab_ihtiyac_analizi(st, conn)
-    elif tab_sec == "Tüm Veriler":
-        tab_tum_veriler(st, conn, cursor)
+
+    elif tab_sec == "Meydan İstatistikleri":
+        from tabs.Meydan.meydan_istatiskleri import tab_naeron_tarih_filtre
+        tab_naeron_tarih_filtre(st)
+        # st.subheader("Meydan İstatistikleri")
+        # st.write("Bu sekme henüz geliştirilme aşamasındadır.")
+        # st.write("Gelecekte, meydan istatistiklerini görüntülemek için kullanılacaktır.")
+        # Burada meydan istatistiklerini görüntülemek için gerekli kodlar eklenebilir.
+
+
+
+
+
+
+
 
 elif menu == "📂 Naeron İşlemleri":
     st.caption("📅 Yüklemek istediğiniz günün verisini aşağıdan seçin")
