@@ -68,7 +68,7 @@ def tab_naeron_tarih_filtre(st):
     flight_col = next((c for c in df.columns if "flight" in c.lower()), None)
 
     # =======================================================
-    sek1, sek2, sek3, sek4, sek5 = st.tabs(["Filtreler", "En çok uçulan Meydanlar", "Meydan İstatistikleri","Zaman Analizi","Uçuş Süresi Tahmini"])
+    sek1, sek2, sek3, sek4, sek5,sek6 = st.tabs(["Filtreler", "En çok uçulan Meydanlar", "Meydan İstatistikleri","Zaman Analizi","Uçuş Süresi Tahmini","Görev Tipi (SEK6)"])
     # =======================================================
 
     # ---------- SEK1: Filtreler ----------
@@ -801,3 +801,65 @@ def tab_naeron_tarih_filtre(st):
                         )
 
 
+
+
+        # ---------- SEK6: Görev Tipi (Naeron’dan) ----------
+    # ---------- SEK6: Görev Tipi (GERÇEKLEŞEN) ----------
+
+    with sek6:
+        sek6_kalkis_inis_filtre(st)
+
+
+
+def sek6_kalkis_inis_filtre(st):
+    st.markdown("---")
+    st.header("🛫🛬 Kalkış / İniş Meydanı ve Tarih Filtresi")
+
+    try:
+        # Veritabanı bağlan
+        conn = sqlite3.connect("naeron_kayitlari.db")
+        df = pd.read_sql_query("SELECT * FROM naeron_ucuslar", conn, parse_dates=["Uçuş Tarihi 2"])
+        conn.close()
+    except Exception as e:
+        st.error(f"Veri okunamadı: {e}")
+        return
+
+    if df.empty:
+        st.warning("Veritabanında kayıt bulunamadı.")
+        return
+
+    # --- Filtreler ---
+    col1, col2 = st.columns(2)
+    with col1:
+        kalkis_sec = st.multiselect("Kalkış Meydanı Seç", sorted(df["Kalkış"].dropna().unique()))
+    with col2:
+        inis_sec = st.multiselect("İniş Meydanı Seç", sorted(df["İniş"].dropna().unique()))
+
+    # Tarih aralığı filtresi
+    min_date, max_date = df["Uçuş Tarihi 2"].min(), df["Uçuş Tarihi 2"].max()
+    tarih_aralik = st.date_input("Tarih Aralığı Seç", [min_date, max_date])
+
+    # --- Filtre uygulama ---
+    df_filt = df.copy()
+    if kalkis_sec:
+        df_filt = df_filt[df_filt["Kalkış"].isin(kalkis_sec)]
+    if inis_sec:
+        df_filt = df_filt[df_filt["İniş"].isin(inis_sec)]
+    if len(tarih_aralik) == 2:
+        start, end = pd.to_datetime(tarih_aralik[0]), pd.to_datetime(tarih_aralik[1])
+        df_filt = df_filt[(df_filt["Uçuş Tarihi 2"] >= start) & (df_filt["Uçuş Tarihi 2"] <= end)]
+
+    st.markdown("### 📋 Filtreye Uyan Görevler")
+    if df_filt.empty:
+        st.info("Seçilen kriterlere uygun görev bulunamadı.")
+        return
+
+    # Görev isimlerini listele
+    gorevler = sorted(df_filt["Görev"].dropna().unique().tolist())
+    secilen_gorevler = st.multiselect("Görevleri Seç ve Ele", gorevler)
+
+    # Gösterim
+    st.dataframe(df_filt[["Uçuş Tarihi 2", "Kalkış", "İniş", "Görev"]], use_container_width=True)
+
+    if secilen_gorevler:
+        st.success(f"Seçilen görevler ({len(secilen_gorevler)}): {', '.join(secilen_gorevler)}")
