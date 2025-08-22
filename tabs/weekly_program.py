@@ -323,6 +323,55 @@ def tab_ogrenci_ozet_sadece_eksik(st, conn):
         df_naeron_raw = pd.DataFrame()
 
     # Naeron kolon doğrulama + hazırlama
+
+
+    from typing import Optional, Tuple
+
+    def _last_date_and_tasks_for_code(df_naeron_all: pd.DataFrame, ogr_kod: str) -> Tuple[Optional[pd.Timestamp], str]:
+        """
+        Verilen öğrenci kodu için Naeron long format verisinden:
+        - En son (max) tarih
+        - O tarihteki TÜM 'Görev' isimleri (benzersiz, görüldüğü sırayla) → " / " ile join
+        döndürür.
+        """
+        alt = df_naeron_all[df_naeron_all["ogrenci_kodu"] == ogr_kod].copy()
+        if alt.empty or "Tarih" not in alt.columns:
+            return pd.NaT, "-"
+
+        # En son tarih (günü baz al)
+        alt["Tarih"] = pd.to_datetime(alt["Tarih"], errors="coerce")
+        alt = alt.dropna(subset=["Tarih"])
+        if alt.empty:
+            return pd.NaT, "-"
+
+        last_day = alt["Tarih"].max().normalize()  # sadece gün
+        same_day = alt[alt["Tarih"].dt.normalize() == last_day]
+
+        # Aynı gün birden fazla uçuş → tüm görevleri sırayı koruyarak, uniq olarak topla
+        seen = set()
+        tasks = []
+        for g in same_day["Görev"].astype(str):
+            if g not in seen:
+                tasks.append(g)
+                seen.add(g)
+
+        tasks_str = " / ".join(tasks) if tasks else "-"
+        return last_day, tasks_str
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     gerekli_kolonlar = {"Öğrenci Pilot", "Uçuş Tarihi 2", "Görev"}
     if not df_naeron_raw.empty and gerekli_kolonlar.issubset(df_naeron_raw.columns):
         # Öğrenci kodunu SENİN fonksiyonla ayıkla
@@ -361,14 +410,9 @@ def tab_ogrenci_ozet_sadece_eksik(st, conn):
 
         # 🆕 Naeron’dan son uçuş bilgisi (görev ne olursa olsun)
         if not df_naeron_raw.empty:
-            df_naeron_kod = df_naeron_raw[df_naeron_raw["ogrenci_kodu"] == kod]
-            if not df_naeron_kod.empty:
-                son_kayit = df_naeron_kod.sort_values("Tarih").iloc[-1]
-                last_dates[kod] = pd.to_datetime(son_kayit["Tarih"], errors="coerce")  # Timestamp sakla
-                last_tasks[kod] = str(son_kayit.get("Görev", "-"))
-            else:
-                last_dates[kod] = pd.NaT
-                last_tasks[kod] = "-"
+            last_dt, last_tasks_str = _last_date_and_tasks_for_code(df_naeron_raw, kod)
+            last_dates[kod] = last_dt
+            last_tasks[kod] = last_tasks_str
         else:
             last_dates[kod] = pd.NaT
             last_tasks[kod] = "-"

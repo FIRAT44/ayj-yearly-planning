@@ -257,169 +257,189 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
 
 
 
-
     with sek2:
-
-        
-
-
-        # --- ÖZEL TABLO: "E-1..E-4 Başlama/Bitiş" (seçili dönem + grup) ---
-        st.markdown("---")
-        st.markdown("### 📋 Grup İlerlemesi — E‑1..E‑4 Başlama/Bitiş (Plan verisine göre)")
-
         import re
-        from tabs.utils.ozet_utils import ozet_panel_verisi_hazirla  # senin fonksiyonunun yolu buysa bırak, değilse düzelt
+        import sqlite3
+      
+        import streamlit as st
 
-        # 1) Seçili dönem zaten üstte seçilmişti: donem_sec
-        #    Bu sekmede de kullanabilmek için o değişken yoksa tekrar soralım:
-        try:
-            _donem_kullan = donem_sec
-        except NameError:
-            # uçuş planından dönemleri çek
-            try:
-                _df_donem = pd.read_sql_query("SELECT DISTINCT donem FROM ucus_planlari", conn)
-                donemler2 = _df_donem["donem"].dropna().astype(str).sort_values().tolist()
-            except Exception:
-                donemler2 = []
-            if not donemler2:
-                st.info("Dönem bulunamadı.")
-                st.stop()
-            _donem_kullan = st.selectbox("📆 Dönem (tablo için)", options=donemler2, key="grp_e_tab_donem")
+        # --- Yardımcılar (mevcut util'den alıyoruz) ---
+        from tabs.utils.ozet_utils import (
+            ogrenci_kodu_ayikla,           # plan/ekranda görünen isimden "123AB" tipinde kodu çıkarır
+            naeron_ogrenci_kodu_ayikla,    # Naeron "Öğrenci Pilot"tan kodu çıkarır (OZ-... formatlarını da düzeltir)
+        )
 
-        # 2) Bu döneme ait grupları listele
-        try:
-            df_gruplar_sel = pd.read_sql_query(
-                "SELECT donem, grup_no, grup_adi FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
-                conn, params=[_donem_kullan]
-            )
-        except Exception:
-            df_gruplar_sel = pd.DataFrame(columns=["donem","grup_no","grup_adi"])
-
-        if df_gruplar_sel.empty:
-            st.info("Bu döneme ait grup kaydı yok.")
-            st.stop()
-
-        grup_ops = df_gruplar_sel["grup_no"].dropna().astype(int).tolist()
-        grup_no_sec = st.selectbox("👥 Grup seç", options=grup_ops, key="grp_e_tab_no")
-
-        grup_adi = df_gruplar_sel.set_index("grup_no").get("grup_adi", pd.Series()).get(grup_no_sec, "")
-        grup_baslik = f"{_donem_kullan}. DÖNEM {grup_no_sec}. GRUP ({grup_adi if pd.notna(grup_adi) and str(grup_adi).strip() else f'{grup_no_sec}. GRUP'})"
-
-        # 3) Bu grup üyelerini çek (öğrenci kodu/ismi)
-        try:
-            df_u = pd.read_sql_query(
-                "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
-                conn, params=[_donem_kullan, int(grup_no_sec)]
-            )
-        except Exception:
-            df_u = pd.DataFrame(columns=["ogrenci"])
-
-        if df_u.empty:
-            st.warning("Bu grupta öğrenci bulunamadı.")
-            st.stop()
-
-        ogr_list = df_u["ogrenci"].dropna().astype(str).tolist()
-
-        # 4) Yardımcılar
-        def _norm_task(s: str) -> str:
+        def _norm(s: str) -> str:
+            # Görev adını normalize (PIF  -  1  -> PIF1 gibi)
             return re.sub(r"[^\w]", "", str(s)).upper()
 
-        def _contains_e(g_name: str, e_label: str) -> bool:
-            # E-1, E1, E 1 vb eşleşsin
-            pat = re.compile(rf"\bE[-\s]*{e_label}\b", re.IGNORECASE)
-            return bool(pat.search(str(g_name)))
+        def _fmt(dt) -> str:
+            return "" if (dt is None or pd.isna(dt)) else pd.to_datetime(dt).strftime("%Y-%m-%d")
 
-        def _ilk_son_tarih(df_ogr: pd.DataFrame, e_label: str):
-            if df_ogr.empty: 
-                return None, None
-            m = df_ogr["gorev_ismi"].apply(lambda x: _contains_e(x, e_label))
-            dfo = df_ogr[m].sort_values("plan_tarihi")
-            if dfo.empty:
-                return None, None
-            return dfo["plan_tarihi"].min(), dfo["plan_tarihi"].max()
 
-        def _fmt_dt(x):
-            if pd.isna(x) or x is None:
-                return ""
-            try:
-                return pd.to_datetime(x).strftime("%d.%m.%Y")
-            except Exception:
-                return str(x)
+        def _safe_sheet(name: str) -> str:
+            bad = r'[]:*?/\\'
+            cleaned = "".join(ch for ch in str(name) if ch not in bad).strip()
+            return (cleaned[:31] or "Sheet")  # Excel sheet adı max 31 karakter
 
-        # 5) Her öğrenci için ozet_panel_verisi_hazirla → E‑1..E‑4 başlama/bitisleri çıkar
+        def _build_group_df(_grup_no: int) -> pd.DataFrame:
+            # Bu grubun üyeleri
+            _df_uye = pd.read_sql_query(
+                "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
+                conn, params=[donem_sec, int(_grup_no)]
+            )
+            if _df_uye.empty:
+                return pd.DataFrame({"Bilgi": [f"{donem_sec} dönemi, Grup #{_grup_no} için öğrenci yok."]})
+
+            _ogrenciler = _df_uye["ogrenci"].dropna().astype(str).tolist()
+            _kod_map = {o: ogrenci_kodu_ayikla(o) for o in _ogrenciler}
+
+            rows2 = []
+            for o in _ogrenciler:
+                k = _kod_map.get(o, "")
+                row = {"Öğrenci": o}
+                if not k:
+                    for col in hedef_gorevler.values():
+                        row[col] = ""
+                    rows2.append(row)
+                    continue
+
+                _dfo = df_naeron_long[df_naeron_long["ogrenci_kodu"] == k]
+                for g_norm, colname in hedef_norm.items():
+                    tseries = _dfo.loc[_dfo["gorev_norm"] == g_norm, "tarih"]
+                    row[colname] = _fmt(tseries.min()) if not tseries.empty else ""
+                rows2.append(row)
+
+            return pd.DataFrame(rows2) 
+                
+        
+        
+        
+        # --- Dönem ve grup seçimi (sade) ---
+        df_donem = pd.read_sql_query("SELECT DISTINCT donem FROM ucus_planlari", conn)
+        donemler = df_donem["donem"].dropna().astype(str).sort_values().tolist()
+        if not donemler:
+            st.info("Dönem bulunamadı."); st.stop()
+        donem_sec = st.selectbox("📆 Dönem", options=donemler, key="e_tab_donem")
+
+        df_gruplar = pd.read_sql_query(
+            "SELECT grup_no FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
+            conn, params=[donem_sec]
+        )
+        if df_gruplar.empty:
+            st.info("Bu döneme ait grup yok."); st.stop()
+        grup_no = st.selectbox("👥 Grup", options=df_gruplar["grup_no"].dropna().astype(int).tolist(), key="e_tab_grup")
+
+        df_uye = pd.read_sql_query(
+            "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
+            conn, params=[donem_sec, int(grup_no)]
+        )
+        if df_uye.empty:
+            st.warning("Bu grupta öğrenci bulunamadı."); st.stop()
+
+        ogrenciler = df_uye["ogrenci"].dropna().astype(str).tolist()
+        ogr_kod_map = {ogr: ogrenci_kodu_ayikla(ogr) for ogr in ogrenciler}
+
+        # --- Naeron → long tablo (MCC çoklu öğrenci split + kod normalize) ---
+        try:
+            conn_naeron = sqlite3.connect("naeron_kayitlari.db")
+            df_n_raw = pd.read_sql_query(
+                "SELECT [Öğrenci Pilot], [Görev], [Uçuş Tarihi 2] FROM naeron_ucuslar",
+                conn_naeron
+            )
+            conn_naeron.close()
+        except Exception:
+            df_n_raw = pd.DataFrame(columns=["Öğrenci Pilot","Görev","Uçuş Tarihi 2"])
+
+        if df_n_raw.empty:
+            df_naeron_long = pd.DataFrame(columns=["ogrenci_kodu","gorev_norm","tarih"])
+        else:
+            # MCC satırları: birden fazla öğrenci olabilir → kodları tek tek çıkar
+            mask_mcc = df_n_raw["Görev"].astype(str).str.upper().str.startswith("MCC")
+            df_mcc = df_n_raw[mask_mcc].copy()
+            rows = []
+            for _, r in df_mcc.iterrows():
+                # metinden 123AB gibi kodları bul
+                kodlar = re.findall(r"\d{3}[A-Z]{2}", str(r.get("Öğrenci Pilot","")).upper())
+                for k in kodlar:
+                    rows.append({
+                        "ogrenci_kodu": k,
+                        "gorev_norm": _norm(r.get("Görev","")),
+                        "tarih": pd.to_datetime(r.get("Uçuş Tarihi 2", None), errors="coerce")
+                    })
+            df_mcc_long = pd.DataFrame(rows, columns=["ogrenci_kodu","gorev_norm","tarih"])
+
+            # MCC olmayanlar: doğrudan kodu çıkar
+            df_other = df_n_raw[~mask_mcc].copy()
+            df_other["ogrenci_kodu"] = df_other["Öğrenci Pilot"].apply(naeron_ogrenci_kodu_ayikla)
+            df_other["gorev_norm"] = df_other["Görev"].apply(_norm)
+            df_other["tarih"] = pd.to_datetime(df_other["Uçuş Tarihi 2"], errors="coerce")
+
+            df_naeron_long = pd.concat(
+                [df_mcc_long, df_other[["ogrenci_kodu","gorev_norm","tarih"]]],
+                ignore_index=True
+            ).dropna(subset=["ogrenci_kodu","gorev_norm","tarih"])
+
+        # --- İstediğin 12 nokta ---
+        hedef_gorevler = {
+            "PIF-1":    "DA-20 IR SIM Başlama",
+            "PIF-8":    "DA-20 IR SIM Bitiş",
+            "PIF-9":    "DA-20 PIF Başlama",
+            "PIF-12":   "DA-20 PIF Bitiş",
+            "CR-1":     "CR UÇAK Başlama",
+            "CR-5":     "CR UÇAK Bitiş",
+            "PIF-13":   "DA-42 PIF SIM Başlama",
+            "PIF-19":   "DA-42 PIF SIM Bitiş",
+            "PIF-20":   "DA-42 PIF UÇAK Başlama",
+            "PIF-29PT": "DA-42 PIF UÇAK Bitiş",
+            "MCC-1":    "MCC SIM Başlama",
+            "MCC-12PT": "MCC SIM Bitiş",
+        }
+        hedef_norm = { _norm(k): v for k, v in hedef_gorevler.items() }
+
+        # --- Satırlar (sade) ---
         rows = []
-        for ogr in ogr_list:
-            try:
-                df_ogrenci, *_ = ozet_panel_verisi_hazirla(ogr, conn, st=st)
-            except Exception:
-                df_ogrenci = pd.DataFrame()
+        for ogr in ogrenciler:
+            kod = ogr_kod_map.get(ogr, "")
+            row = {"Öğrenci": ogr}
+            if not kod:
+                # kod çıkarılamazsa tüm hücreler boş kalır
+                for col in hedef_gorevler.values(): row[col] = ""
+                rows.append(row); continue
 
-            # sadece seçili dönem satırları
-            if not df_ogrenci.empty and "donem" in df_ogrenci.columns:
-                df_ogrenci = df_ogrenci[df_ogrenci["donem"] == _donem_kullan].copy()
+            df_o = df_naeron_long[df_naeron_long["ogrenci_kodu"] == kod]
+            for g_norm, colname in hedef_norm.items():
+                # Bu görev için kaydedilen tarihlerden en küçüğünü (başlama) ve en büyüğünü (bitiş) istiyor olabilirsin
+                # Ancak sen hücreye tek tarih istedin → burada "ilk gerçekleşen tarih"i yazıyorum.
+                t = df_o.loc[df_o["gorev_norm"] == g_norm, "tarih"]
+                row[colname] = _fmt(t.min()) if not t.empty else ""
+            rows.append(row)
 
-            e1s, e1e = _ilk_son_tarih(df_ogrenci, "1")
-            e2s, e2e = _ilk_son_tarih(df_ogrenci, "2")
-            e3s, e3e = _ilk_son_tarih(df_ogrenci, "3")
-            e4s, e4e = _ilk_son_tarih(df_ogrenci, "4")
+        df_out = pd.DataFrame(rows)
+        st.dataframe(df_out, use_container_width=True)
 
-            rows.append({
-                ("Grup", "", ""): ogr,                                   # sol ilk sütun (öğrenci)
-                ("DA-20 IR SIM", "E-1", "Başlama"): _fmt_dt(e1s),
-                ("DA-20 IR SIM", "E-2", "Bitiş"):   _fmt_dt(e2e),
-                ("DA-20 PIF PIF-1", "E-3", "Başlama"): _fmt_dt(e3s),
-                ("DA-20 PIF", "E-4", "Bitiş"):        _fmt_dt(e4e),
-            })
-
-        if not rows:
-            st.info("Gösterilecek kayıt bulunamadı.")
-            st.stop()
-
-        # 6) Çok seviyeli kolon yap ve tabloyu HTML olarak çiz (çok satırlı başlık için)
-        cols = pd.MultiIndex.from_tuples([
-            ("Grup", "", ""),
-            ("DA-20 IR SIM", "E-1", "Başlama"),
-            ("DA-20 IR SIM", "E-2", "Bitiş"),
-            ("DA-20 PIF PIF-1", "E-3", "Başlama"),
-            ("DA-20 PIF", "E-4", "Bitiş"),
-        ])
-        df_table = pd.DataFrame(rows, columns=cols)
-
-        # Üst sol köşeye grup/dönem başlığını yerleştirmek için ilk hücrenin üzerine yazı koyalım
-        st.markdown(
-            f"<div style='padding:.4rem .6rem; "
-            f"border-radius:.5rem; font-weight:800; display:inline-block; margin-bottom:.5rem;'>{grup_baslik}</div>",
-            unsafe_allow_html=True
+        # Dönemdeki tüm gruplar
+        _df_all_groups = pd.read_sql_query(
+            "SELECT grup_no, COALESCE(grup_adi,'') AS grup_adi FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
+            conn, params=[donem_sec]
         )
 
-        # HTML tablo (okunaklı stil)
-        html = df_table.to_html(index=False, escape=False)
-        html = html.replace(
-            "<table border=\"1\" class=\"dataframe\">",
-            "<table class=\"dataframe\" style='border-collapse:collapse; width:100%; font-family:Inter,system-ui,sans-serif; color:#fff;'>"
-        ).replace(
-            "<th>", "<th style='color:#fff; padding:.45rem; text-align:center; border:1px solid #444;'>"
-        ).replace(
-            "<td>", "<td style='color:#fff; padding:.45rem; border:1px solid #444; text-align:center;'>"
-        )
+        if not _df_all_groups.empty:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                for _, rr in _df_all_groups.iterrows():
+                    gno = int(rr["grup_no"])
+                    gadi = str(rr.get("grup_adi", "") or "").strip()
+                    df_sheet = _build_group_df(gno)
+                    sheet_name = _safe_sheet(f"{donem_sec}-G{gno} {gadi}" if gadi else f"{donem_sec}-G{gno}")
+                    df_sheet.to_excel(writer, index=False, sheet_name=sheet_name)
 
-        st.markdown(html, unsafe_allow_html=True)
-
-        # 7) Excel indirme
-        buf_e = io.BytesIO()
-        with pd.ExcelWriter(buf_e, engine="xlsxwriter") as writer:
-            # Excel multiindex başlıklar düzgün gitsin
-            df_x = df_table.copy()
-            # sütun isimlerini tek satıra indir (kategori | görev | tip)
-            df_x.columns = [" | ".join([c for c in col if c]) for col in df_x.columns.values]
-            df_x.to_excel(writer, index=False, sheet_name="Grup_E_Tablosu")
-        st.download_button(
-            "📥 Excel (E‑1..E‑4 Başlama/Bitiş)",
-            data=buf_e.getvalue(),
-            file_name=f"{_donem_kullan}_grup_{grup_no_sec}_E1E4_baslama_bitis.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="grp_e_excel"
-        )
-
-
-
+            st.download_button(
+                "📥 Seçili Dönemin Tüm Grupları (Her Grup Ayrı Sheet)",
+                data=buf.getvalue(),
+                file_name=f"{donem_sec}_tum_gruplar.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_all_groups_excel"
+            )
+        else:
+            st.info("Seçili döneme ait grup bulunamadı.")
