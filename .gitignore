@@ -22,3 +22,12 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+*.pyc
+__pycache__/
