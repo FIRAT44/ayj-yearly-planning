@@ -146,6 +146,8 @@ cursor.execute("""
 """)
 conn.commit()
 
+    
+
 ALL_MENUS = [
     "📋 Planlama",
     "📊 Analiz ve Raporlar",
@@ -154,8 +156,8 @@ ALL_MENUS = [
     # "✈️ Uçak Bazlı Uçuş Süresi Analizi",
     "Meteoroloji Verileri",
     "🔄 FAMS → Naeron",
-    "deneme",
-    "Firebase Bağlantısı"
+    "Firebase Bağlantısı",
+    "Ayarlar"
 ]
 
 
@@ -247,8 +249,17 @@ elif menu == "📊 Analiz ve Raporlar":
 
 
 
-
-
+elif menu == "Ayarlar":
+    st.subheader("⚙️ Ayarlar")
+    from tabs.scripts.auto_refresh_panel import auto_refresh_panel
+# duvar saatine hizalı, overlay + kısa beep, döngüsel mesaj
+    auto_refresh_panel(
+        st,
+        key="auto5m",
+        enable_revize_controls=True,
+        conn=conn,               # mevcut DB bağlantın
+        revize_donem="127"       # istersen dinamik verebilirsin
+    )
 
 
 elif menu == "📂 Naeron İşlemleri":
@@ -311,9 +322,7 @@ elif menu == "🔄 FAMS → Naeron":
     if tab_sec == "FAMS → Naeron":
         tab_fams_to_naeron(st, conn)
 
-elif menu == "deneme":
-    from tabs.tab_deneme import deneme
-    deneme(st, conn)
+
 
 
 elif menu == "Firebase Bağlantısı":

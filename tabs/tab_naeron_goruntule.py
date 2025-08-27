@@ -58,6 +58,7 @@ def tab_naeron_goruntule(st):
                     """,
                     # SXC ve diğer görev güncellemeleri
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PPL (A) SKILL TEST' WHERE \"Görev\" = 'PPL ST'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'PPL (A) SKILL TEST' WHERE \"Görev\" = 'PPL (A) ST'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIC' WHERE \"Görev\" = 'Cross Country'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIC' WHERE \"Görev\" = 'CROSS COUNTRY'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'E-17C' WHERE \"Görev\" = 'E-17C SK'",
@@ -68,6 +69,7 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT. TKR. (SE)' WHERE \"Görev\" = 'EÐT. TKR.(SE)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'E-EGT.TKR.(SE)' WHERE \"Görev\" = 'E-EÐT.TKR.(SE)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EĞT.TKR(SIM)'",
+                    
                     # PIF görevleri
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-13' WHERE \"Görev\" = 'PIF-13 (ME/SIM)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-14' WHERE \"Görev\" = 'PIF-14 (ME/SIM)'",
@@ -98,6 +100,9 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-12PT' WHERE \"Görev\" = 'MCC-A-12PT'   AND \"Öğrenci Pilot\" LIKE '131%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-1'    WHERE \"Görev\" = 'MCC A-1'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-2'    WHERE \"Görev\" = 'MCC A-2'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-3'    WHERE \"Görev\" = 'MCC A-3'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-4'    WHERE \"Görev\" = 'MCC A-4'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-5'    WHERE \"Görev\" = 'MCC A-5'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-9'    WHERE \"Görev\" = 'MCC A-9'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-10'   WHERE \"Görev\" = 'MCC A-10'     AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-6'   WHERE \"Görev\" = 'MCC A-6'     AND \"Öğrenci Pilot\" LIKE '132%'",
@@ -105,9 +110,23 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-7'   WHERE \"Görev\" = 'MCC A-7'     AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-11'   WHERE \"Görev\" = 'MCC A-11'     AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC A-12 PT'   AND \"Öğrenci Pilot\" LIKE '132%'",
+
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-1'    WHERE \"Görev\" = 'MCC B-1'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-2'    WHERE \"Görev\" = 'MCC B-2'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-3'    WHERE \"Görev\" = 'MCC B-3'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-4'    WHERE \"Görev\" = 'MCC B-4'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-5'    WHERE \"Görev\" = 'MCC B-5'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-6'    WHERE \"Görev\" = 'MCC B-6'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-7'    WHERE \"Görev\" = 'MCC B-7'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-8'    WHERE \"Görev\" = 'MCC B-8'      AND \"Öğrenci Pilot\" LIKE '132%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-9'    WHERE \"Görev\" = 'MCC B-9'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     # ... diğer 132.* MCC-A-* görevleri benzer biçimde ...
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '127%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '128%'",
+
+
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'CR ST' WHERE \"Görev\" = 'CR-S/T'   AND \"Öğrenci Pilot\" LIKE '130%'",
+
                     """
 UPDATE naeron_ucuslar
 SET "Öğrenci Pilot" = TRIM(SUBSTR("Öğrenci Pilot", 1, INSTR("Öğrenci Pilot", ' - ') - 1))
