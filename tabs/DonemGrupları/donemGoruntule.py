@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import sqlite3
 import io
+import re
 
 def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
     # ---------- Stil ----------
@@ -255,92 +256,55 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
                             unsafe_allow_html=True
                         )
 
-
-
     with sek2:
-        import re
-        import sqlite3
-      
-        import streamlit as st
+        # --- İhtiyaç duyulan import'lar ---
+        
 
-        # --- Yardımcılar (mevcut util'den alıyoruz) ---
+        # Hücre etiket renkleri: Tahmin (mavi), Uçuş (yeşil)
+        st.markdown(
+            "<style>.tag.tahm{background:#e6f0ff;color:#0f172a}.tag.ucus{background:#dcfce7;color:#14532d}.muted{opacity:.5}</style>",
+            unsafe_allow_html=True
+        )
+
+        # --- Yardımcılar (mevcut util'den) ---
         from tabs.utils.ozet_utils import (
-            ogrenci_kodu_ayikla,           # plan/ekranda görünen isimden "123AB" tipinde kodu çıkarır
-            naeron_ogrenci_kodu_ayikla,    # Naeron "Öğrenci Pilot"tan kodu çıkarır (OZ-... formatlarını da düzeltir)
+            ogrenci_kodu_ayikla,
+            naeron_ogrenci_kodu_ayikla,
         )
 
         def _norm(s: str) -> str:
-            # Görev adını normalize (PIF  -  1  -> PIF1 gibi)
             return re.sub(r"[^\w]", "", str(s)).upper()
 
         def _fmt(dt) -> str:
             return "" if (dt is None or pd.isna(dt)) else pd.to_datetime(dt).strftime("%Y-%m-%d")
 
-
         def _safe_sheet(name: str) -> str:
             bad = r'[]:*?/\\'
             cleaned = "".join(ch for ch in str(name) if ch not in bad).strip()
-            return (cleaned[:31] or "Sheet")  # Excel sheet adı max 31 karakter
+            return (cleaned[:31] or "Sheet")
 
-        def _build_group_df(_grup_no: int) -> pd.DataFrame:
-            # Bu grubun üyeleri
-            _df_uye = pd.read_sql_query(
-                "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
-                conn, params=[donem_sec, int(_grup_no)]
-            )
-            if _df_uye.empty:
-                return pd.DataFrame({"Bilgi": [f"{donem_sec} dönemi, Grup #{_grup_no} için öğrenci yok."]})
-
-            _ogrenciler = _df_uye["ogrenci"].dropna().astype(str).tolist()
-            _kod_map = {o: ogrenci_kodu_ayikla(o) for o in _ogrenciler}
-
-            rows2 = []
-            for o in _ogrenciler:
-                k = _kod_map.get(o, "")
-                row = {"Öğrenci": o}
-                if not k:
-                    for col in hedef_gorevler.values():
-                        row[col] = ""
-                    rows2.append(row)
-                    continue
-
-                _dfo = df_naeron_long[df_naeron_long["ogrenci_kodu"] == k]
-                for g_norm, colname in hedef_norm.items():
-                    tseries = _dfo.loc[_dfo["gorev_norm"] == g_norm, "tarih"]
-                    row[colname] = _fmt(tseries.min()) if not tseries.empty else ""
-                rows2.append(row)
-
-            return pd.DataFrame(rows2) 
-                
-        
-        
-        
-        # --- Dönem ve grup seçimi (sade) ---
-        df_donem = pd.read_sql_query("SELECT DISTINCT donem FROM ucus_planlari", conn)
-        donemler = df_donem["donem"].dropna().astype(str).sort_values().tolist()
-        if not donemler:
+        # --- Dönem & Grup seçimi ---
+        df_donem2 = pd.read_sql_query("""
+            SELECT DISTINCT donem FROM donem_gruplar
+            UNION
+            SELECT DISTINCT donem FROM donem_grup_uyeleri
+            UNION
+            SELECT DISTINCT donem FROM ucus_planlari
+        """, conn)
+        donemler2 = df_donem2["donem"].dropna().astype(str).sort_values().tolist()
+        if not donemler2:
             st.info("Dönem bulunamadı."); st.stop()
-        donem_sec = st.selectbox("📆 Dönem", options=donemler, key="e_tab_donem")
+        donem_sec = st.selectbox("📆 Dönem", options=donemler2, key="e_tab_donem")
 
-        df_gruplar = pd.read_sql_query(
-            "SELECT grup_no FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
+        df_gruplar2 = pd.read_sql_query(
+            "SELECT grup_no, COALESCE(grup_adi,'') AS grup_adi FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
             conn, params=[donem_sec]
         )
-        if df_gruplar.empty:
+        if df_gruplar2.empty:
             st.info("Bu döneme ait grup yok."); st.stop()
-        grup_no = st.selectbox("👥 Grup", options=df_gruplar["grup_no"].dropna().astype(int).tolist(), key="e_tab_grup")
+        grup_no = st.selectbox("👥 Grup", options=df_gruplar2["grup_no"].dropna().astype(int).tolist(), key="e_tab_grup")
 
-        df_uye = pd.read_sql_query(
-            "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem = ? AND grup_no = ? ORDER BY ogrenci",
-            conn, params=[donem_sec, int(grup_no)]
-        )
-        if df_uye.empty:
-            st.warning("Bu grupta öğrenci bulunamadı."); st.stop()
-
-        ogrenciler = df_uye["ogrenci"].dropna().astype(str).tolist()
-        ogr_kod_map = {ogr: ogrenci_kodu_ayikla(ogr) for ogr in ogrenciler}
-
-        # --- Naeron → long tablo (MCC çoklu öğrenci split + kod normalize) ---
+        # --- Naeron → long (MCC split + kod normalize) ---
         try:
             conn_naeron = sqlite3.connect("naeron_kayitlari.db")
             df_n_raw = pd.read_sql_query(
@@ -354,12 +318,10 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
         if df_n_raw.empty:
             df_naeron_long = pd.DataFrame(columns=["ogrenci_kodu","gorev_norm","tarih"])
         else:
-            # MCC satırları: birden fazla öğrenci olabilir → kodları tek tek çıkar
             mask_mcc = df_n_raw["Görev"].astype(str).str.upper().str.startswith("MCC")
             df_mcc = df_n_raw[mask_mcc].copy()
             rows = []
             for _, r in df_mcc.iterrows():
-                # metinden 123AB gibi kodları bul
                 kodlar = re.findall(r"\d{3}[A-Z]{2}", str(r.get("Öğrenci Pilot","")).upper())
                 for k in kodlar:
                     rows.append({
@@ -369,7 +331,6 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
                     })
             df_mcc_long = pd.DataFrame(rows, columns=["ogrenci_kodu","gorev_norm","tarih"])
 
-            # MCC olmayanlar: doğrudan kodu çıkar
             df_other = df_n_raw[~mask_mcc].copy()
             df_other["ogrenci_kodu"] = df_other["Öğrenci Pilot"].apply(naeron_ogrenci_kodu_ayikla)
             df_other["gorev_norm"] = df_other["Görev"].apply(_norm)
@@ -380,7 +341,7 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
                 ignore_index=True
             ).dropna(subset=["ogrenci_kodu","gorev_norm","tarih"])
 
-        # --- İstediğin 12 nokta ---
+        # --- 12 hedef görev etiketi ---
         hedef_gorevler = {
             "PIF-1":    "DA-20 IR SIM Başlama",
             "PIF-8":    "DA-20 IR SIM Bitiş",
@@ -396,50 +357,254 @@ def tab_donem_grup_tablosu(st, conn: sqlite3.Connection | None = None):
             "MCC-12PT": "MCC SIM Bitiş",
         }
         hedef_norm = { _norm(k): v for k, v in hedef_gorevler.items() }
+        gorev_order = list(hedef_gorevler.values())
 
-        # --- Satırlar (sade) ---
-        rows = []
-        for ogr in ogrenciler:
-            kod = ogr_kod_map.get(ogr, "")
-            row = {"Öğrenci": ogr}
-            if not kod:
-                # kod çıkarılamazsa tüm hücreler boş kalır
-                for col in hedef_gorevler.values(): row[col] = ""
-                rows.append(row); continue
+        # === Grup bazlı tahmini tarih editörü (DB: grup_tahminleri) ===
+        def _ensure_grup_tahmin_table(_conn):
+            cur = _conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS grup_tahminleri (
+                    donem TEXT NOT NULL,
+                    grup_no INTEGER NOT NULL,
+                    gorev_label TEXT NOT NULL,
+                    tahmini_tarih TEXT,
+                    PRIMARY KEY (donem, grup_no, gorev_label)
+                )
+            """)
+            _conn.commit()
+        _ensure_grup_tahmin_table(conn)
 
-            df_o = df_naeron_long[df_naeron_long["ogrenci_kodu"] == kod]
-            for g_norm, colname in hedef_norm.items():
-                # Bu görev için kaydedilen tarihlerden en küçüğünü (başlama) ve en büyüğünü (bitiş) istiyor olabilirsin
-                # Ancak sen hücreye tek tarih istedin → burada "ilk gerçekleşen tarih"i yazıyorum.
-                t = df_o.loc[df_o["gorev_norm"] == g_norm, "tarih"]
-                row[colname] = _fmt(t.min()) if not t.empty else ""
-            rows.append(row)
+        # Seçili grubun mevcut tahminlerini oku → editor
+        df_tahmin_g_sel = pd.read_sql_query(
+            "SELECT gorev_label, tahmini_tarih FROM grup_tahminleri WHERE donem = ? AND grup_no = ?",
+            conn, params=[donem_sec, int(grup_no)]
+        )
+        base_rows = [{"Görev": lbl, "Grup Tahmini Tarih": pd.NaT} for lbl in gorev_order]
+        df_grup_editor = pd.DataFrame(base_rows)
+        if not df_tahmin_g_sel.empty:
+            df_tahmin_g_sel["Grup Tahmini Tarih"] = pd.to_datetime(df_tahmin_g_sel["tahmini_tarih"], errors="coerce")
+            df_grup_editor = df_grup_editor.merge(
+                df_tahmin_g_sel[["gorev_label","Grup Tahmini Tarih"]],
+                left_on="Görev", right_on="gorev_label", how="left"
+            ).drop(columns=["gorev_label"])
+            df_grup_editor["Grup Tahmini Tarih"] = df_grup_editor["Grup Tahmini Tarih_x"].combine_first(df_grup_editor["Grup Tahmini Tarih_y"])
+            df_grup_editor = df_grup_editor.drop(columns=["Grup Tahmini Tarih_x","Grup Tahmini Tarih_y"])
 
-        df_out = pd.DataFrame(rows)
-        st.dataframe(df_out, use_container_width=True)
-
-        # Dönemdeki tüm gruplar
-        _df_all_groups = pd.read_sql_query(
-            "SELECT grup_no, COALESCE(grup_adi,'') AS grup_adi FROM donem_gruplar WHERE donem = ? ORDER BY grup_no",
-            conn, params=[donem_sec]
+        st.markdown("### 📆 Grup Bazlı Tahmini Tarihler (Editlenebilir)")
+        edit_grup = st.data_editor(
+            df_grup_editor,
+            use_container_width=True,
+            num_rows="fixed",
+            disabled=["Görev"],
+            column_config={
+                "Grup Tahmini Tarih": st.column_config.DateColumn(
+                    "Grup Tahmini Tarih", format="YYYY-MM-DD",
+                    help="Bu görevin grup için öngörülen tarihi"
+                )
+            },
+            key="df_grup_tahmin_editor"
         )
 
-        if not _df_all_groups.empty:
+        if st.button("💾 Grup Tahminlerini Kaydet"):
+            cur = conn.cursor()
+            for _, r in edit_grup.iterrows():
+                t = r["Grup Tahmini Tarih"]
+                t_str = None if (pd.isna(t)) else pd.to_datetime(t).strftime("%Y-%m-%d")
+                cur.execute("""
+                    INSERT OR REPLACE INTO grup_tahminleri (donem, grup_no, gorev_label, tahmini_tarih)
+                    VALUES (?, ?, ?, ?)
+                """, (donem_sec, int(grup_no), r["Görev"], t_str))
+            conn.commit()
+            st.success("✅ Grup tahmini tarihler kaydedildi.")
+
+        # --- Grup özel tahmin haritası (yalnız bu gruba göster) ---
+        def _get_tahmin_map_for_group(gno:int)->dict:
+            df_t = pd.read_sql_query(
+                "SELECT gorev_label, tahmini_tarih FROM grup_tahminleri WHERE donem = ? AND grup_no = ?",
+                conn, params=[donem_sec, int(gno)]
+            )
+            mp = {}
+            if not df_t.empty:
+                for _, rr in df_t.iterrows():
+                    mp[str(rr["gorev_label"])] = pd.to_datetime(rr["tahmini_tarih"], errors="coerce")
+            return mp
+
+        # === Transpoze görsel tablo (Görevler = sütun başlıkları, Öğrenciler = satır başlıkları) ===
+        st.markdown("""
+        <style>
+          .grp-h{margin:8px 0 6px 0;text-align:center;font-weight:900;font-size:1.05rem;letter-spacing:.6px}
+          .grp-foot{margin:6px 0 14px 0;text-align:center;opacity:.75;font-weight:700}
+          .grp-sep{height:2px;margin:8px 0 16px 0;
+                   background:linear-gradient(90deg,rgba(99,102,241,.25),rgba(14,165,233,.5),rgba(34,197,94,.25));border-radius:999px}
+          .tblwrap{max-height:560px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:12px}
+          .tblwrap table{width:100%;border-collapse:collapse;font-size:.95rem}
+          .tblwrap thead th{position:sticky;top:0;z-index:2;background:#0f172a;color:#fff}
+          .tblwrap th,.tblwrap td{border:1px solid rgba(255,255,255,.06);padding:8px;vertical-align:top}
+          .tblwrap tbody th{position:sticky;left:0;z-index:1;background:#0b1220;color:#fff}
+          .cell{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap}
+          .tag{display:inline-block;border-radius:10px;padding:2px 6px;font-weight:700}
+        </style>
+        """, unsafe_allow_html=True)
+
+        tumu = st.toggle("Tüm grupları alt alta göster", value=False, key="show_all_groups_v2")
+
+        def _ogrenciler_for_group(gno:int)->list[str]:
+            df_u = pd.read_sql_query(
+                "SELECT ogrenci FROM donem_grup_uyeleri WHERE donem=? AND grup_no=? ORDER BY ogrenci",
+                conn, params=[donem_sec, int(gno)]
+            )
+            return df_u["ogrenci"].dropna().astype(str).str.strip().tolist()
+
+        def _df_long_for_group(gno:int)->pd.DataFrame:
+            ogrenciler_g = _ogrenciler_for_group(gno)          # SADECE bu grubun öğrencileri
+            _kod_map = {o: ogrenci_kodu_ayikla(o) for o in ogrenciler_g}
+            local_tahmin_map = _get_tahmin_map_for_group(gno)  # SADECE bu grubun tahminleri
+
+            rows = []
+            for ogr in ogrenciler_g:
+                kod = _kod_map.get(ogr, "")
+                dfo_naeron = df_naeron_long[df_naeron_long["ogrenci_kodu"] == kod] if kod else pd.DataFrame(columns=df_naeron_long.columns)
+                for k, label in hedef_gorevler.items():
+                    g_norm = _norm(k)
+                    ucu_dt = dfo_naeron.loc[dfo_naeron["gorev_norm"]==g_norm, "tarih"].min()
+                    rows.append({
+                        "Öğrenci": ogr,
+                        "Görev": label,
+                        "Tahmini Tarih (Grup)": _fmt(local_tahmin_map.get(label, pd.NaT)),
+                        "Uçulan Tarih": _fmt(ucu_dt),
+                    })
+            df_l = pd.DataFrame(rows)
+            # Görev sırasını sabitle
+            df_l["Görev"] = pd.Categorical(df_l["Görev"], categories=gorev_order, ordered=True)
+            df_l = df_l.sort_values(["Öğrenci","Görev"])
+            return df_l
+
+        def _render_group_table(gno:int, gadi:str|None=""):
+            df_l = _df_long_for_group(gno)
+
+            # Hücre: sadece tarihler — Tahmin mavi, Uçuş yeşil; yoksa '—'
+            def _cell(r):
+                t_val = str(r["Tahmini Tarih (Grup)"]).strip()
+                u_val = str(r["Uçulan Tarih"]).strip()
+                t_html = f"<span class='tag tahm'>{t_val}</span>" if t_val else ""
+                u_html = f"<span class='tag ucus'>{u_val}</span>" if u_val else ""
+                content = (t_html + u_html) if (t_html or u_html) else "<span class='muted'>—</span>"
+                return f"<div class='cell'>{content}</div>"
+
+            df_cells = df_l.copy()
+            df_cells["__cell__"] = df_cells.apply(_cell, axis=1)
+
+            # PİVOT: Öğrenci = satır (index), Görev = sütun (başlık)
+            piv = df_cells.pivot(index="Öğrenci", columns="Görev", values="__cell__")
+            piv = piv.reindex(columns=gorev_order)  # görev sırası
+            piv = piv.fillna("<span class='muted'>—</span>")
+
+            st.markdown(f"<div class='grp-h'>—— {gno}. GRUP {('· '+gadi) if gadi else ''} ——</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tblwrap'>{piv.to_html(escape=False)}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='grp-foot'>{gno}. GRUP</div>", unsafe_allow_html=True)
+            st.markdown("<div class='grp-sep'></div>", unsafe_allow_html=True)
+
+        if tumu and not df_gruplar2.empty:
+            for _, rr in df_gruplar2.iterrows():
+                _gno = int(rr["grup_no"])
+                _gadi = str(rr.get("grup_adi","") or "").strip()
+                _render_group_table(_gno, _gadi)
+        else:
+            _gadi = str(df_gruplar2.loc[df_gruplar2["grup_no"]==int(grup_no), "grup_adi"].fillna("").iloc[0]) if not df_gruplar2.empty else ""
+            _render_group_table(int(grup_no), _gadi)
+
+        # ============================================================
+        # === Excel Dışa Aktarım (renkli, ekrandaki gibi iki satır) ===
+        # ============================================================
+        def _write_group_sheet(writer, sheet_name: str, df_l: pd.DataFrame):
+            """df_l: kolonlar -> 'Öğrenci','Görev','Tahmini Tarih (Grup)','Uçulan Tarih'"""
+            wb  = writer.book
+            ws  = wb.add_worksheet(sheet_name)
+
+            # --- Formatlar ---
+            hdr = wb.add_format({
+                "bold": True, "font_color": "white", "align": "center",
+                "valign": "vcenter", "bg_color": "#0f172a", "border": 1
+            })
+            name_fmt = wb.add_format({
+                "bold": True, "align": "center", "valign": "vcenter",
+                "bg_color": "#0b1220", "font_color": "white", "border": 1
+            })
+            tahmin_fmt = wb.add_format({
+                "align": "center", "valign": "vcenter",
+                "bg_color": "#e6f0ff", "font_color": "#0f172a", "border": 1
+            })
+            ucus_fmt = wb.add_format({
+                "align": "center", "valign": "vcenter",
+                "bg_color": "#dcfce7", "font_color": "#14532d", "border": 1
+            })
+            empty_fmt = wb.add_format({
+                "align": "center", "valign": "vcenter",
+                "font_color": "#888888", "border": 1
+            })
+
+            # --- Başlıklar ---
+            ws.write(0, 0, "Öğrenci", hdr)
+            for j, g in enumerate(gorev_order):
+                ws.write(0, j+1, g, hdr)
+
+            # Öğrenciler
+            students = df_l["Öğrenci"].dropna().astype(str).unique().tolist()
+
+            row = 1
+            for ogr in students:
+                # Aynı öğrenciyi 2 satırda göstereceğiz (üst: Tahmin, alt: Uçuş) → ad hücresi merge
+                ws.merge_range(row, 0, row+1, 0, ogr, name_fmt)
+                for j, g in enumerate(gorev_order):
+                    t = df_l.loc[(df_l["Öğrenci"]==ogr) & (df_l["Görev"]==g), "Tahmini Tarih (Grup)"]
+                    u = df_l.loc[(df_l["Öğrenci"]==ogr) & (df_l["Görev"]==g), "Uçulan Tarih"]
+                    t_val = str(t.iloc[0]).strip() if not t.empty else ""
+                    u_val = str(u.iloc[0]).strip() if not u.empty else ""
+
+                    # Üst satır: Tahmin (mavi) / boşsa '—'
+                    ws.write(row,   j+1, (t_val if t_val else "—"), tahmin_fmt if t_val else empty_fmt)
+                    # Alt satır: Uçuş (yeşil) / boşsa '—'
+                    ws.write(row+1, j+1, (u_val if u_val else "—"), ucus_fmt if u_val else empty_fmt)
+
+                row += 2
+
+            # Genişlikler ve donuk bölge
+            ws.set_column(0, 0, 28)   # Öğrenci
+            for j in range(len(gorev_order)):
+                ws.set_column(j+1, j+1, 18)
+            ws.freeze_panes(1, 1)  # başlık ve ad sütunu sabit
+
+        # Seçili grup için renkli Excel
+        if st.button("📥 Excel indir (Seçili Grup) — RENKLİ"):
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-                for _, rr in _df_all_groups.iterrows():
-                    gno = int(rr["grup_no"])
-                    gadi = str(rr.get("grup_adi", "") or "").strip()
-                    df_sheet = _build_group_df(gno)
-                    sheet_name = _safe_sheet(f"{donem_sec}-G{gno} {gadi}" if gadi else f"{donem_sec}-G{gno}")
-                    df_sheet.to_excel(writer, index=False, sheet_name=sheet_name)
-
+                gno = int(grup_no)
+                gadi = str(df_gruplar2.loc[df_gruplar2["grup_no"]==gno, "grup_adi"].fillna("").iloc[0]) if not df_gruplar2.empty else ""
+                df_l = _df_long_for_group(gno)
+                sheet_name = _safe_sheet(f"{donem_sec}-G{gno} {gadi}" if gadi else f"{donem_sec}-G{gno}")
+                _write_group_sheet(writer, sheet_name, df_l)
             st.download_button(
-                "📥 Seçili Dönemin Tüm Grupları (Her Grup Ayrı Sheet)",
+                "📥 Excel indir (Seçili Grup) — RENKLİ",
                 data=buf.getvalue(),
-                file_name=f"{donem_sec}_tum_gruplar.xlsx",
+                file_name=f"{donem_sec}_G{int(grup_no)}_ucus_tahmin_RENKLI.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_all_groups_excel"
+                key="dl_grp_excel_color_v1"
             )
-        else:
-            st.info("Seçili döneme ait grup bulunamadı.")
+
+        # Tüm gruplar: her grup ayrı sheet (renkli)
+        if st.button("📥 Excel indir (Seçili Dönemin Tüm Grupları) — RENKLİ"):
+            buf_all = io.BytesIO()
+            with pd.ExcelWriter(buf_all, engine="xlsxwriter") as writer:
+                for _, rr in df_gruplar2.iterrows():
+                    gno = int(rr["grup_no"])
+                    gadi = str(rr.get("grup_adi","") or "").strip()
+                    df_l = _df_long_for_group(gno)
+                    sheet_name = _safe_sheet(f"{donem_sec}-G{gno} {gadi}" if gadi else f"{donem_sec}-G{gno}")
+                    _write_group_sheet(writer, sheet_name, df_l)
+            st.download_button(
+                "📥 Excel indir (Tüm Gruplar) — RENKLİ",
+                data=buf_all.getvalue(),
+                file_name=f"{donem_sec}_tum_gruplar_ucus_tahmin_RENKLI.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_all_groups_excel_color_v1"
+            )

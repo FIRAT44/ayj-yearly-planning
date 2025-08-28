@@ -5,7 +5,7 @@ from tabs.donem_bilgileri import donem_bilgileri
 from tabs.DonemGrupları.donemGrupları import tab_donem_ogrenci_gruplama_custom
 
 
-def tab_donem_ogrenci_yonetimi(st, conn):
+def     tab_donem_ogrenci_yonetimi(st, conn):
     st.subheader("📚 Dönem ve Öğrenci Yönetimi")
 
     sekme1, sekme2,sekme3= st.tabs(["Dönem ve Öğrenciler", "📊 Genel Plan","Dönem Grupları"])

@@ -157,7 +157,8 @@ ALL_MENUS = [
     "Meteoroloji Verileri",
     "🔄 FAMS → Naeron",
     "Firebase Bağlantısı",
-    "Ayarlar"
+    "Ayarlar",
+    "Aralıklı Gorev Hesaplama"
 ]
 
 
@@ -247,7 +248,9 @@ elif menu == "📊 Analiz ve Raporlar":
         # Burada meydan istatistiklerini görüntülemek için gerekli kodlar eklenebilir.
 
 
-
+elif menu == "Aralıklı Gorev Hesaplama":
+    from tabs.tab_gorev_aralik_ort import tab_gorev_aralik_ort
+    tab_gorev_aralik_ort(st, conn)
 
 elif menu == "Ayarlar":
     st.subheader("⚙️ Ayarlar")
