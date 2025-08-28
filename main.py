@@ -158,7 +158,8 @@ ALL_MENUS = [
     "🔄 FAMS → Naeron",
     "Firebase Bağlantısı",
     "Ayarlar",
-    "Aralıklı Gorev Hesaplama"
+    "Aralıklı Gorev Hesaplama",
+    "MEYDAN İSTATİSTİKLERİ"
 ]
 
 
@@ -175,6 +176,15 @@ if menu == "📋 Planlama":
     if tab_sec == "Plan Oluştur":
         tab_plan_olustur(st, conn, cursor)
     
+
+
+
+
+
+
+
+
+
 
 
     elif tab_sec == "Dönemler":
@@ -205,6 +215,12 @@ if menu == "📋 Planlama":
     elif tab_sec == "🧪 Taslak Plan Çoklu Görev":
         tab_taslak_coklu_gorev(conn)
     
+
+
+elif menu == "MEYDAN İSTATİSTİKLERİ":
+    from tabs.Meydan.meydan_verileri import tab_meydan_istatistikleri
+    tab_meydan_istatistikleri(st)
+
 
 elif menu == "📊 Analiz ve Raporlar":
     analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]

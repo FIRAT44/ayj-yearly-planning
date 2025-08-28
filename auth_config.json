@@ -6,7 +6,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "admin",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","Firebase Bağlantısı","Ayarlar","Aralıklı Gorev Hesaplama"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","Firebase Bağlantısı","Ayarlar","Aralıklı Gorev Hesaplama","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"],
