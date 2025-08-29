@@ -3,7 +3,6 @@ import pandas as pd
 
 
 def tab_ihtiyac_analizi(st, conn):
-    import re
     st.subheader("📈 Tarihsel Uçuş Süre Analizi")
 
     # --- yardımcılar ---
@@ -19,13 +18,12 @@ def tab_ihtiyac_analizi(st, conn):
     def _format_time_cols(df, cols=None):
         df2 = df.copy()
         if cols is None:
-            # bilinen saat sütunlarını + A/C & SIM kolonlarını + 'Y' adındaki kolonu yakala
             cols = [c for c in df2.columns
                     if c.lower() in ["sure_saat", "toplam saat", "toplam", "kalan_saat", "gunluk_takvim", "y"]
-                    or c.startswith("A/C") or c.startswith("SIM")]
-        for c in cols:
-            if c in df2.columns:
-                df2[c] = df2[c].apply(_fmt_hhmmss)
+                    or c.startswith("A/C") or c in ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]]
+        for col in cols:
+            if col in df2.columns:
+                df2[col] = df2[col].apply(_fmt_hhmmss)
         return df2
 
     df = pd.read_sql_query(
@@ -56,22 +54,26 @@ def tab_ihtiyac_analizi(st, conn):
         st.warning("Seçilen aralıkta veri bulunamadı.")
         return
 
-    # --- KATEGORİ HARİTASI (görev tipine göre) ---
+    # --- KATEGORİ HARİTASI ---
     def _norm(s: str) -> str:
         return re.sub(r"\s+", " ", str(s).strip().upper())
 
-    SIM_KEYS     = {"MCC SIM", "ME SIM", "SE SIM"}
+    # A/C detay anahtarları (kalsın; toplam A/C'de kullanabiliriz)
     DA20_KEYS    = {"SE DUAL DA", "SE PIC"}
     SONACA_KEYS  = {"SE DUAL SONACA"}
     ME_DUAL_KEYS = {"ME DUAL"}
     AUPRT_KEYS   = {"AUPRT"}
 
+    # İSTEDİĞİN 4 GÖREVİ bire bir isimleriyle üret
     def map_kategori(gorev_tipi: str) -> str:
         s = _norm(gorev_tipi)
-        if any(s.startswith(k) or k in s for k in SIM_KEYS): return "SIM(AYJET)"
+        if s == "ME DUAL": return "ME DUAL"
+        if s.startswith("ME SIM"):  return "ME SIM"
+        if s.startswith("SE SIM"):  return "SE SIM"
+        if s.startswith("MCC SIM"): return "MCC SIM"
+        # Diğer A/C kırılımları (opsiyonel, görünmesi faydalı olabilir)
         if s in DA20_KEYS:    return "A/C – DA20"
         if s in SONACA_KEYS:  return "A/C – SONACA"
-        if s in ME_DUAL_KEYS: return "A/C – ME DUAL"
         if s in AUPRT_KEYS:   return "A/C – AUPRT"
         return "A/C – DİĞER"
 
@@ -101,31 +103,55 @@ def tab_ihtiyac_analizi(st, conn):
     st.markdown("## 🔷 Toplam Uçuş Süresi (Günlük)")
     df_gunluk_total = gunluk_top.reset_index().sort_values("plan_tarihi")
     st.line_chart(df_gunluk_total.set_index("plan_tarihi"), height=300, use_container_width=True)
-    st.dataframe(_format_time_cols(df_gunluk_total.rename(columns={"sure_saat":"Toplam Saat"})),
-                 use_container_width=True)
+    st.dataframe(
+        _format_time_cols(df_gunluk_total.rename(columns={"sure_saat":"Toplam Saat"})),
+        use_container_width=True
+    )
 
-    # === A/C vs SIM(AYJET) — Aylık ===
-    st.markdown("## ✈️ vs 🧪 A/C (Toplam) — SIM(AYJET) · Aylık")
-    aylik_detay = df_aralik.groupby(["ay","kategori_detay"])["sure_saat"].sum().reset_index()
-    piv_detay   = aylik_detay.pivot(index="ay", columns="kategori_detay", values="sure_saat").fillna(0.0).sort_index()
-
-    ac_cols = [c for c in piv_detay.columns if c.startswith("A/C")]
-    aylik_ac  = piv_detay[ac_cols].sum(axis=1).rename("A/C")
-    aylik_sim = (piv_detay["SIM(AYJET)"] if "SIM(AYJET)" in piv_detay.columns else pd.Series(0.0, index=piv_detay.index)).rename("SIM(AYJET)")
-    piv_ac_sim = pd.concat([aylik_ac, aylik_sim], axis=1)
+    # === A/C (Toplam) vs SIM (Toplam) — Aylık (çifte sayım yok) ===
+    st.markdown("## ✈️ vs 🧪 A/C (Toplam) — SIM(Toplam) · Aylık")
+    SIM_SET = {"ME SIM", "SE SIM", "MCC SIM"}
+    aylik_ac  = (df_aralik[~df_aralik["kategori_detay"].isin(SIM_SET)]
+                 .groupby("ay")["sure_saat"].sum())
+    aylik_sim = (df_aralik[df_aralik["kategori_detay"].isin(SIM_SET)]
+                 .groupby("ay")["sure_saat"].sum())
+    piv_ac_sim = pd.concat([aylik_ac.rename("A/C"), aylik_sim.rename("SIM")], axis=1).fillna(0.0).sort_index()
 
     st.bar_chart(piv_ac_sim, height=330, use_container_width=True)
     st.dataframe(_format_time_cols(piv_ac_sim.reset_index().rename(columns={"ay":"Ay"})), use_container_width=True)
 
-    # === A/C Detay — Aylık ===
+    # === A/C Detay — Aylık (opsiyonel görünüm) ===
     st.markdown("### 🗓️ A/C Detay — Aylık Toplam")
-    piv_ac_detay = piv_detay[[c for c in piv_detay.columns if c.startswith("A/C")]].copy()
+    piv_ac_detay = (df_aralik[~df_aralik["kategori_detay"].isin(SIM_SET)]
+                    .groupby(["ay","kategori_detay"])["sure_saat"].sum()
+                    .unstack(fill_value=0.0).sort_index())
     if not piv_ac_detay.empty:
         st.bar_chart(piv_ac_detay, height=300, use_container_width=True)
-        st.dataframe(_format_time_cols(piv_ac_detay.assign(TOPLAM=piv_ac_detay.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
-                     use_container_width=True)
+        st.dataframe(
+            _format_time_cols(piv_ac_detay.assign(TOPLAM=piv_ac_detay.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
+            use_container_width=True
+        )
     else:
         st.caption("A/C detay bulunamadı.")
+
+    # === 🧩 Seçili 4 Görev — Aylık (ME DUAL, ME SIM, SE SIM, MCC SIM) ===
+    st.markdown("### 🧩 Seçili 4 Görev — Aylık (ME DUAL / ME SIM / SE SIM / MCC SIM)")
+    FOUR = ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]
+    piv_four = (df_aralik[df_aralik["kategori_detay"].isin(FOUR)]
+                .groupby(["ay","kategori_detay"])["sure_saat"].sum()
+                .unstack(fill_value=0.0).sort_index())
+    if not piv_four.empty:
+        # kolon sırası sabit
+        for k in FOUR:
+            if k not in piv_four.columns: piv_four[k] = 0.0
+        piv_four = piv_four[FOUR]
+        st.bar_chart(piv_four, height=300, use_container_width=True)
+        st.dataframe(
+            _format_time_cols(piv_four.assign(TOPLAM=piv_four.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
+            use_container_width=True
+        )
+    else:
+        st.caption("Seçili dört görev için veri yok.")
 
     # === Görev tipleri alt grafikler ===
     gorev_tipleri = sorted(df_aralik["gorev_tipi"].dropna().unique().tolist())
@@ -170,28 +196,30 @@ def excel_rapor_grafikli_indir(st, df_aralik, df_gunluk_total, selected_tips, ta
         if cols is None:
             cols = [c for c in df2.columns
                     if c.lower() in ["sure_saat", "toplam saat", "toplam", "kalan_saat", "gunluk_takvim", "y"]
-                    or c.startswith("A/C") or c.startswith("SIM")]
-        for c in cols:
-            if c in df2.columns:
-                df2[c] = df2[c].apply(_fmt_hhmmss)
+                    or c.startswith("A/C") or c in ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]]
+        for col in cols:
+            if col in df2.columns:
+                df2[col] = df2[col].apply(_fmt_hhmmss)
         return df2
 
     tmpdir = tempfile.mkdtemp()
 
-    # --- kategori haritası ---
+    # --- kategori haritası (4 görev + diğerleri) ---
     def _norm(s: str) -> str:
         return re.sub(r"\s+", " ", str(s).strip().upper())
-    SIM_KEYS     = {"MCC SIM", "ME SIM", "SE SIM"}
+
     DA20_KEYS    = {"SE DUAL DA", "SE PIC"}
     SONACA_KEYS  = {"SE DUAL SONACA"}
-    ME_DUAL_KEYS = {"ME DUAL"}
     AUPRT_KEYS   = {"AUPRT"}
+
     def map_kategori(gorev_tipi: str) -> str:
         s = _norm(gorev_tipi)
-        if any(s.startswith(k) or k in s for k in SIM_KEYS): return "SIM(AYJET)"
+        if s == "ME DUAL": return "ME DUAL"
+        if s.startswith("ME SIM"):  return "ME SIM"
+        if s.startswith("SE SIM"):  return "SE SIM"
+        if s.startswith("MCC SIM"): return "MCC SIM"
         if s in DA20_KEYS:    return "A/C – DA20"
         if s in SONACA_KEYS:  return "A/C – SONACA"
-        if s in ME_DUAL_KEYS: return "A/C – ME DUAL"
         if s in AUPRT_KEYS:   return "A/C – AUPRT"
         return "A/C – DİĞER"
 
@@ -207,41 +235,58 @@ def excel_rapor_grafikli_indir(st, df_aralik, df_gunluk_total, selected_tips, ta
     plt.xlabel("Tarih"); plt.ylabel("Saat"); plt.grid(True, linestyle="--", alpha=0.5)
     plt.tight_layout(); plt.savefig(path_total); plt.close()
 
-    aylik_detay = dfa.groupby(["ay","kategori_detay"])["sure_saat"].sum().reset_index()
-    piv_detay   = aylik_detay.pivot(index="ay", columns="kategori_detay", values="sure_saat").fillna(0.0).sort_index()
-    ac_cols     = [c for c in piv_detay.columns if c.startswith("A/C")]
-    aylik_ac    = piv_detay[ac_cols].sum(axis=1).rename("A/C")
-    aylik_sim   = (piv_detay["SIM(AYJET)"] if "SIM(AYJET)" in piv_detay.columns else pd.Series(0.0, index=piv_detay.index)).rename("SIM(AYJET)")
-    piv_ac_sim  = pd.concat([aylik_ac, aylik_sim], axis=1)
+    # A/C (toplam) vs SIM (toplam)
+    SIM_SET = {"ME SIM", "SE SIM", "MCC SIM"}
+    aylik_ac  = (dfa[~dfa["kategori_detay"].isin(SIM_SET)].groupby("ay")["sure_saat"].sum())
+    aylik_sim = (dfa[dfa["kategori_detay"].isin(SIM_SET)].groupby("ay")["sure_saat"].sum())
+    piv_ac_sim  = pd.concat([aylik_ac.rename("A/C"), aylik_sim.rename("SIM")], axis=1).fillna(0.0).sort_index()
 
     path_monthly_cat = os.path.join(tmpdir, "aylik_ac_vs_sim.png")
     plt.figure(figsize=(9,3.2))
     piv_ac_sim.plot(kind="bar", ax=plt.gca())
-    plt.title("A/C (Toplam) vs SIM(AYJET) — Aylık")
+    plt.title("A/C (Toplam) vs SIM (Toplam) — Aylık")
     plt.xlabel("Ay"); plt.ylabel("Saat"); plt.tight_layout()
     plt.savefig(path_monthly_cat); plt.close()
 
-    piv_ac_detay = piv_detay[ac_cols].copy()
+    # A/C detay aylık
+    piv_ac_detay = (dfa[~dfa["kategori_detay"].isin(SIM_SET)]
+                    .groupby(["ay","kategori_detay"])["sure_saat"]
+                    .sum().unstack(fill_value=0.0).sort_index())
     path_monthly_ac_detail = os.path.join(tmpdir, "aylik_ac_detay.png")
     if not piv_ac_detay.empty:
         plt.figure(figsize=(9,3.2))
         piv_ac_detay.plot(kind="bar", ax=plt.gca())
-        plt.title("A/C Detay (DA20, SONACA, ME DUAL, AUPRT, DİĞER) — Aylık")
+        plt.title("A/C Detay — Aylık")
         plt.xlabel("Ay"); plt.ylabel("Saat"); plt.tight_layout()
         plt.savefig(path_monthly_ac_detail); plt.close()
 
-    tip_graf_paths = []
-    for tip in selected_tips:
-        dft = dfa[dfa["gorev_tipi"] == tip]
-        dfg = dft.groupby("plan_tarihi")["sure_saat"].sum().reset_index()
-        if dfg.empty: continue
-        pth = os.path.join(tmpdir, f"tip_{re.sub(r'[^A-Za-z0-9_]+','_', tip)[:30]}.png")
-        plt.figure(figsize=(7,2.5))
-        plt.plot(dfg["plan_tarihi"], dfg["sure_saat"], marker=".")
-        plt.title(f"Görev Tipi: {tip}")
-        plt.xlabel("Tarih"); plt.ylabel("Saat"); plt.grid(True, linestyle="--", alpha=0.5)
-        plt.tight_layout(); plt.savefig(pth); plt.close()
-        tip_graf_paths.append((tip, pth))
+    # SIM detay aylık (3 başlık)
+    piv_sim_detay = (dfa[dfa["kategori_detay"].isin(SIM_SET)]
+                     .groupby(["ay","kategori_detay"])["sure_saat"]
+                     .sum().unstack(fill_value=0.0).sort_index())
+    path_monthly_sim_detail = os.path.join(tmpdir, "aylik_sim_detay.png")
+    if not piv_sim_detay.empty:
+        plt.figure(figsize=(9,3.2))
+        piv_sim_detay.plot(kind="bar", ax=plt.gca())
+        plt.title("SIM Detay (ME SIM / SE SIM / MCC SIM) — Aylık")
+        plt.xlabel("Ay"); plt.ylabel("Saat"); plt.tight_layout()
+        plt.savefig(path_monthly_sim_detail); plt.close()
+
+    # Seçili 4 görev aylık (ME DUAL + 3 SIM)
+    FOUR = ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]
+    piv_four = (dfa[dfa["kategori_detay"].isin(FOUR)]
+                .groupby(["ay","kategori_detay"])["sure_saat"]
+                .sum().unstack(fill_value=0.0).sort_index())
+    path_monthly_four = os.path.join(tmpdir, "aylik_4_gorev.png")
+    if not piv_four.empty:
+        for k in FOUR:
+            if k not in piv_four.columns: piv_four[k] = 0.0
+        piv_four = piv_four[FOUR]
+        plt.figure(figsize=(9,3.2))
+        piv_four.plot(kind="bar", ax=plt.gca())
+        plt.title("Seçili 4 Görev — Aylık (ME DUAL / ME SIM / SE SIM / MCC SIM)")
+        plt.xlabel("Ay"); plt.ylabel("Saat"); plt.tight_layout()
+        plt.savefig(path_monthly_four); plt.close()
 
     # --- EXCEL ---
     excel_buffer = io.BytesIO()
@@ -261,18 +306,36 @@ def excel_rapor_grafikli_indir(st, df_aralik, df_gunluk_total, selected_tips, ta
         df_gt["Toplam Saat"] = df_gt["Toplam Saat"].apply(_fmt_hhmmss)
         df_gt.to_excel(writer, index=False, sheet_name="Günlük Toplam")
 
-        # A/C vs SIM(AYJET) tablo (HH:MM:SS)
-        piv_ac_sim_x = piv_ac_sim.reset_index().rename(columns={"ay":"Ay"}).copy()
-        for c in [col for col in piv_ac_sim_x.columns if col != "Ay"]:
-            piv_ac_sim_x[c] = piv_ac_sim_x[c].apply(_fmt_hhmmss)
-        piv_ac_sim_x.to_excel(writer, index=False, sheet_name="Aylık AC_vs_SIM")
+        # A/C vs SIM (HH:MM:SS)
+        acsim_x = piv_ac_sim.reset_index().rename(columns={"ay":"Ay"}).copy()
+        for col in [col for col in acsim_x.columns if col != "Ay"]:
+            acsim_x[col] = acsim_x[col].apply(_fmt_hhmmss)
+        acsim_x.to_excel(writer, index=False, sheet_name="Aylık AC_vs_SIM")
 
-        # A/C detay tablo (HH:MM:SS)
+        # A/C detay (HH:MM:SS)
         if not piv_ac_detay.empty:
-            piv_ac_detay_x = piv_ac_detay.reset_index().rename(columns={"ay":"Ay"}).copy()
-            for c in [col for col in piv_ac_detay_x.columns if col != "Ay"]:
-                piv_ac_detay_x[c] = piv_ac_detay_x[c].apply(_fmt_hhmmss)
-            piv_ac_detay_x.to_excel(writer, index=False, sheet_name="Aylık AC Detay")
+            acd_x = piv_ac_detay.reset_index().rename(columns={"ay":"Ay"}).copy()
+            for col in [col for col in acd_x.columns if col != "Ay"]:
+                acd_x[col] = acd_x[col].apply(_fmt_hhmmss)
+            acd_x.to_excel(writer, index=False, sheet_name="Aylık AC Detay")
+
+        # SIM detay (HH:MM:SS)
+        if not piv_sim_detay.empty:
+            simd_x = piv_sim_detay.reset_index().rename(columns={"ay":"Ay"}).copy()
+            for col in [col for col in simd_x.columns if col != "Ay"]:
+                simd_x[col] = simd_x[col].apply(_fmt_hhmmss)
+            simd_x.to_excel(writer, index=False, sheet_name="Aylık SIM Detay")
+
+        # 4 Görev (HH:MM:SS)
+        if not piv_four.empty:
+            four_x = piv_four.reset_index().rename(columns={"ay":"Ay"}).copy()
+            # kolon sırasını sabitle
+            for k in ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]:
+                if k not in four_x.columns: four_x[k] = 0.0
+            four_x = four_x[["Ay","ME DUAL","ME SIM","SE SIM","MCC SIM"]]
+            for col in [col for col in four_x.columns if col != "Ay"]:
+                four_x[col] = four_x[col].apply(_fmt_hhmmss)
+            four_x.to_excel(writer, index=False, sheet_name="Aylık 4 Görev")
 
         # Her görev tipi (HH:MM:SS)
         for tip in selected_tips:
@@ -289,10 +352,10 @@ def excel_rapor_grafikli_indir(st, df_aralik, df_gunluk_total, selected_tips, ta
     wb["Aylık AC_vs_SIM"].add_image(XLImage(path_monthly_cat), "E2")
     if "Aylık AC Detay" in wb.sheetnames and os.path.exists(path_monthly_ac_detail):
         wb["Aylık AC Detay"].add_image(XLImage(path_monthly_ac_detail), "E2")
-    for tip, pth in tip_graf_paths:
-        ws_name = f"Tip_{tip[:25]}"
-        if ws_name in wb.sheetnames:
-            wb[ws_name].add_image(XLImage(pth), "E2")
+    if "Aylık SIM Detay" in wb.sheetnames and os.path.exists(path_monthly_sim_detail):
+        wb["Aylık SIM Detay"].add_image(XLImage(path_monthly_sim_detail), "E2")
+    if "Aylık 4 Görev" in wb.sheetnames and os.path.exists(path_monthly_four):
+        wb["Aylık 4 Görev"].add_image(XLImage(path_monthly_four), "E2")
 
     out_buf = io.BytesIO()
     wb.save(out_buf); out_buf.seek(0)
@@ -302,8 +365,6 @@ def excel_rapor_grafikli_indir(st, df_aralik, df_gunluk_total, selected_tips, ta
         file_name=f"ucus_analiz_{tarih1.date()}_{tarih2.date()}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
 
 
 
@@ -333,10 +394,10 @@ def tarihsel_akilli_ozet_panel(st, conn, tarih1, tarih2, df_aralik):
         if cols is None:
             cols = [c for c in df2.columns
                     if c.lower() in ["sure_saat", "toplam saat", "toplam", "kalan_saat", "gunluk_takvim", "y"]
-                    or c.startswith("A/C") or c.startswith("SIM")]
-        for c in cols:
-            if c in df2.columns:
-                df2[c] = df2[c].apply(_fmt_hhmmss)
+                    or c.startswith("A/C") or c in ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]]
+        for col in cols:
+            if col in df2.columns:
+                df2[col] = df2[col].apply(_fmt_hhmmss)
         return df2
 
     if df_aralik is None or df_aralik.empty:
@@ -382,8 +443,7 @@ def tarihsel_akilli_ozet_panel(st, conn, tarih1, tarih2, df_aralik):
     if not kalan_tip.empty:
         df_show = kalan_tip[["gorev_tipi","kalan_saat","gunluk_takvim"]].copy()
         df_show.columns = ["Görev Tipi","Kalan Saat","Günlük (Takvim)"]
-        st.dataframe(_format_time_cols(df_show, cols=["Kalan Saat","Günlük (Takvim)"]),
-                     use_container_width=True)
+        st.dataframe(_format_time_cols(df_show, cols=["Kalan Saat","Günlük (Takvim)"]), use_container_width=True)
     else:
         st.caption("Seçili aralık için kalan görev tipi hedefi yok.")
 
@@ -392,45 +452,70 @@ def tarihsel_akilli_ozet_panel(st, conn, tarih1, tarih2, df_aralik):
                    f"Günlük ort. (uçulan): {_fmt_hhmmss(gunluk.mean())} | "
                    f"En yüksek gün: {_fmt_hhmmss(gunluk.max())}")
 
-    # --- KATEGORİ & A/C Detay — Aylık ---
+    # --- KATEGORİ & A/C / SIM / 4 Görev — Aylık ---
     def _norm(s: str) -> str:
         return re.sub(r"\s+", " ", str(s).strip().upper())
-    SIM_KEYS     = {"MCC SIM", "ME SIM", "SE SIM"}
-    DA20_KEYS    = {"SE DUAL DA", "SE PIC"}
-    SONACA_KEYS  = {"SE DUAL SONACA"}
-    ME_DUAL_KEYS = {"ME DUAL"}
-    AUPRT_KEYS   = {"AUPRT"}
+
     def map_kategori(gorev_tipi: str) -> str:
         s = _norm(gorev_tipi)
-        if any(s.startswith(k) or k in s for k in SIM_KEYS): return "SIM(AYJET)"
-        if s in DA20_KEYS:    return "A/C – DA20"
-        if s in SONACA_KEYS:  return "A/C – SONACA"
-        if s in ME_DUAL_KEYS: return "A/C – ME DUAL"
-        if s in AUPRT_KEYS:   return "A/C – AUPRT"
+        if s == "ME DUAL": return "ME DUAL"
+        if s.startswith("ME SIM"):  return "ME SIM"
+        if s.startswith("SE SIM"):  return "SE SIM"
+        if s.startswith("MCC SIM"): return "MCC SIM"
+        if s in {"SE DUAL DA","SE PIC"}:        return "A/C – DA20"
+        if s in {"SE DUAL SONACA"}:            return "A/C – SONACA"
+        if s in {"AUPRT"}:                      return "A/C – AUPRT"
         return "A/C – DİĞER"
 
     dfr = df_range.copy()
     dfr["kategori_detay"] = dfr["gorev_tipi"].apply(map_kategori)
     dfr["ay"] = dfr["plan_tarihi"].dt.to_period("M").dt.to_timestamp()
 
-    aylik_detay = dfr.groupby(["ay","kategori_detay"])["sure_saat"].sum().reset_index()
-    piv_detay   = aylik_detay.pivot(index="ay", columns="kategori_detay", values="sure_saat").fillna(0.0).sort_index()
+    SIM_SET = {"ME SIM", "SE SIM", "MCC SIM"}
 
-    ac_cols = [c for c in piv_detay.columns if c.startswith("A/C")]
-    aylik_ac  = piv_detay[ac_cols].sum(axis=1).rename("A/C")
-    aylik_sim = (piv_detay["SIM(AYJET)"] if "SIM(AYJET)" in piv_detay.columns else pd.Series(0.0, index=piv_detay.index)).rename("SIM(AYJET)")
-    piv_ac_sim = pd.concat([aylik_ac, aylik_sim], axis=1)
+    # A/C vs SIM
+    aylik_ac  = (dfr[~dfr["kategori_detay"].isin(SIM_SET)]
+                 .groupby("ay")["sure_saat"].sum())
+    aylik_sim = (dfr[dfr["kategori_detay"].isin(SIM_SET)]
+                 .groupby("ay")["sure_saat"].sum())
+    piv_ac_sim = pd.concat([aylik_ac.rename("A/C"), aylik_sim.rename("SIM")], axis=1).fillna(0.0).sort_index()
 
-    st.markdown("### 📊 A/C (Toplam) vs SIM(AYJET) — Aylık")
+    st.markdown("### 📊 A/C (Toplam) vs SIM (Toplam) — Aylık")
     st.bar_chart(piv_ac_sim, height=300, use_container_width=True)
-    st.dataframe(_format_time_cols(piv_ac_sim.reset_index().rename(columns={"ay":"Ay"})),
-                 use_container_width=True)
+    st.dataframe(_format_time_cols(piv_ac_sim.reset_index().rename(columns={"ay":"Ay"})), use_container_width=True)
 
-    st.markdown("### 📊 A/C Detay — Aylık")
-    piv_ac_detay = piv_detay[[c for c in piv_detay.columns if c.startswith("A/C")]].copy()
+    # A/C Detay
+    piv_ac_detay = (dfr[~dfr["kategori_detay"].isin(SIM_SET)]
+                    .groupby(["ay","kategori_detay"])["sure_saat"].sum()
+                    .unstack(fill_value=0.0).sort_index())
     if not piv_ac_detay.empty:
+        st.markdown("### 📊 A/C Detay — Aylık")
         st.bar_chart(piv_ac_detay, height=300, use_container_width=True)
         st.dataframe(_format_time_cols(piv_ac_detay.assign(TOPLAM=piv_ac_detay.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
+                     use_container_width=True)
+
+    # SIM Detay (ME SIM / SE SIM / MCC SIM)
+    piv_sim_detay = (dfr[dfr["kategori_detay"].isin(SIM_SET)]
+                     .groupby(["ay","kategori_detay"])["sure_saat"].sum()
+                     .unstack(fill_value=0.0).sort_index())
+    if not piv_sim_detay.empty:
+        st.markdown("### 🧪 SIM Detay — Aylık (ME SIM / SE SIM / MCC SIM)")
+        st.bar_chart(piv_sim_detay, height=300, use_container_width=True)
+        st.dataframe(_format_time_cols(piv_sim_detay.assign(TOPLAM=piv_sim_detay.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
+                     use_container_width=True)
+
+    # Seçili 4 Görev (ME DUAL + 3 SIM)
+    FOUR = ["ME DUAL", "ME SIM", "SE SIM", "MCC SIM"]
+    piv_four = (dfr[dfr["kategori_detay"].isin(FOUR)]
+                .groupby(["ay","kategori_detay"])["sure_saat"].sum()
+                .unstack(fill_value=0.0).sort_index())
+    if not piv_four.empty:
+        for k in FOUR:
+            if k not in piv_four.columns: piv_four[k] = 0.0
+        piv_four = piv_four[FOUR]
+        st.markdown("### 🧩 Seçili 4 Görev — Aylık")
+        st.bar_chart(piv_four, height=300, use_container_width=True)
+        st.dataframe(_format_time_cols(piv_four.assign(TOPLAM=piv_four.sum(axis=1)).reset_index().rename(columns={"ay":"Ay"})),
                      use_container_width=True)
 
     # --- Excel (Akıllı Özet) — HH:MM:SS ---
@@ -451,15 +536,27 @@ def tarihsel_akilli_ozet_panel(st, conn, tarih1, tarih2, df_aralik):
 
             if not piv_ac_sim.empty:
                 df1 = piv_ac_sim.reset_index().rename(columns={"ay":"Ay"})
-                for c in [col for col in df1.columns if col != "Ay"]:
-                    df1[c] = df1[c].apply(_fmt_hhmmss)
+                for col in [col for col in df1.columns if col != "Ay"]:
+                    df1[col] = df1[col].apply(_fmt_hhmmss)
                 df1.to_excel(writer, index=False, sheet_name="Aylik_AC_vs_SIM")
 
             if not piv_ac_detay.empty:
                 df2 = piv_ac_detay.reset_index().rename(columns={"ay":"Ay"})
-                for c in [col for col in df2.columns if col != "Ay"]:
-                    df2[c] = df2[c].apply(_fmt_hhmmss)
+                for col in [col for col in df2.columns if col != "Ay"]:
+                    df2[col] = df2[col].apply(_fmt_hhmmss)
                 df2.to_excel(writer, index=False, sheet_name="Aylik_AC_Detay")
+
+            if not piv_sim_detay.empty:
+                df3 = piv_sim_detay.reset_index().rename(columns={"ay":"Ay"})
+                for col in [col for col in df3.columns if col != "Ay"]:
+                    df3[col] = df3[col].apply(_fmt_hhmmss)
+                df3.to_excel(writer, index=False, sheet_name="Aylik_SIM_Detay")
+
+            if not piv_four.empty:
+                df4 = piv_four.reset_index().rename(columns={"ay":"Ay"})
+                for col in [col for col in df4.columns if col != "Ay"]:
+                    df4[col] = df4[col].apply(_fmt_hhmmss)
+                df4.to_excel(writer, index=False, sheet_name="Aylik_4_Gorev")
 
             if not gunluk.empty:
                 gt = gunluk.reset_index().rename(columns={"plan_tarihi":"Tarih","sure_saat":"Toplam Saat"})
