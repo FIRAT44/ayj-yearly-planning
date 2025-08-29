@@ -6,6 +6,7 @@ import io
 from datetime import time as dtime
 import datetime as dt
 import plotly.express as px
+import math
 
 AY_ADLARI = {
     1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",
@@ -73,6 +74,135 @@ def _seconds_to_hhmmss(sec: int) -> str:
     m = (sec % 3600) // 60
     s = sec % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+
+
+def _ui_key(kind, *parts):
+    # UI elemanları için benzersiz ve stabil anahtar
+    return "ui_" + _safe_name(kind) + "_" + "_".join(_safe_name(str(p)) for p in parts)
+
+
+
+
+
+
+
+
+
+# --- SIM DB yardımcıları ---
+SIM_META = "meydan_meta_sim"
+
+def _sim_table_name(genel: str) -> str:
+    return f"{_safe_name(genel)}__sim"
+
+def _ensure_meta_sim(conn):
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS {SIM_META}(
+            table_name TEXT PRIMARY KEY,
+            genel      TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+
+def _ensure_sim_table(conn, genel: str):
+    """SIM tablosunu oluşturur; eksik kolonları (sim + iptal_sim) ALTER ile ekler."""
+    tbl = _sim_table_name(genel)
+    cols = []
+    for m in range(1,13):
+        cols.append(f"sim_saniye_{m} INTEGER DEFAULT 0")
+        cols.append(f"iptal_sim_saniye_{m} INTEGER DEFAULT 0")
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS {tbl}(
+            yil INTEGER NOT NULL,
+            sim_tipi TEXT NOT NULL,
+            {", ".join(cols)},
+            created_at TEXT,
+            updated_at TEXT,
+            PRIMARY KEY (yil, sim_tipi)
+        )
+    """)
+    # eksik kolonları ekle
+    info = conn.execute(f"PRAGMA table_info({tbl})").fetchall()
+    existing = {c[1] for c in info}
+    for m in range(1,13):
+        if f"sim_saniye_{m}" not in existing:
+            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN sim_saniye_{m} INTEGER DEFAULT 0")
+        if f"iptal_sim_saniye_{m}" not in existing:
+            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN iptal_sim_saniye_{m} INTEGER DEFAULT 0")
+
+    _ensure_meta_sim(conn)
+    now = pd.Timestamp.utcnow().isoformat()
+    conn.execute(
+        f"INSERT OR IGNORE INTO {SIM_META}(table_name,genel,created_at,updated_at) VALUES (?,?,?,?)",
+        (tbl, genel, now, now)
+    )
+
+def _save_sim_year(conn, genel: str, yil: int, df_rows: pd.DataFrame,
+                   sim_cols: list[str], sim_cancel_cols: list[str]):
+    """Editörden gelen HH:MM[:SS] sim sürelerini (normal + iptal) saniye cinsinden kaydeder."""
+    tbl = _sim_table_name(genel)
+    _ensure_sim_table(conn, genel)
+    now = pd.Timestamp.utcnow().isoformat()
+
+    for _, r in df_rows.iterrows():
+        stype = str(r.get("Uçak Tipi","") or r.get("Sim Tipi","")).strip()
+        if not stype:
+            continue
+        sim_secs   = [int(_time_to_seconds(r[sim_cols[m-1]]))       for m in range(1,13)]
+        ipt_secs   = [int(_time_to_seconds(r[sim_cancel_cols[m-1]])) for m in range(1,13)]
+
+        col_list = (
+            [f"sim_saniye_{m}" for m in range(1,13)] +
+            [f"iptal_sim_saniye_{m}" for m in range(1,13)]
+        )
+        placeholders = ",".join(["?"]*(2 + len(col_list) + 2))
+        conn.execute(
+            f"REPLACE INTO {tbl}(yil,sim_tipi,{','.join(col_list)},created_at,updated_at) "
+            f"VALUES ({placeholders})",
+            (int(yil), stype, *sim_secs, *ipt_secs, now, now)
+        )
+
+def _load_sim_year(conn, genel: str, yil: int) -> pd.DataFrame | None:
+    """DB’den HH:MM:SS formatında SIM editör tablosu (normal + iptal) oluşturur."""
+    tbl = _sim_table_name(genel)
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,))
+    if cur.fetchone() is None:
+        return None
+
+    rows = conn.execute(f"SELECT * FROM {tbl} WHERE yil=?", (int(yil),)).fetchall()
+    if not rows:
+        return pd.DataFrame()
+
+    cols = [c[1] for c in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+    df = pd.DataFrame(rows, columns=cols)
+
+    out = []
+    for _, r in df.iterrows():
+        row = {"Uçak Tipi": r["sim_tipi"]}  # entegrasyon için aynı isim
+        for m in range(1,13):
+            row[f"{AY_ADLARI[m]} - Sim Süresi"]       = _seconds_to_hhmmss(int(r.get(f"sim_saniye_{m}",0)))
+            row[f"{AY_ADLARI[m]} - İptal Sim Süresi"] = _seconds_to_hhmmss(int(r.get(f"iptal_sim_saniye_{m}",0)))
+        out.append(row)
+    return pd.DataFrame(out)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import re
 from pathlib import Path
@@ -195,12 +325,14 @@ def tab_meydan_istatistikleri(st, conn_naeron: sqlite3.Connection | None = None)
     mod = st.radio("Mod", ["Meydan DB (Manuel)", "Naeron’dan Oku"], horizontal=True)
 
     if mod == "Meydan DB (Manuel)":
-        sek1, sek2, sek3 = st.tabs(["✍️ Veri Girişi", "📚 Kayıtlar","Tüm Kayıtlar"])
+        sek1, sek2, sek3 , sek4 = st.tabs(["✍️ Veri Girişi", "📚 Kayıtlar","SIM verileri","Tüm Kayıtlar"])
         with sek1:
             _manuel_giris_ekrani(st)      # (DB’ye kaydet – mevcut editör)
         with sek2:
             _kayitlari_goruntule(st)       # (DB’deki kayıtları gör)
         with sek3:
+            _sim_veri_girisi(st)      # (SIM verileri – yeni editör)
+        with sek4:
             _genel_toplam_tum_ana(st)  # (DB’deki tüm ana/rota/yıl kayıtları)
 
 
@@ -211,8 +343,10 @@ def _manuel_giris_ekrani(st):
 
     colA, colB = st.columns([1,2])
     with colA:
-        ana = st.text_input("Ana isim", value="hezarfen")
-        yil = st.number_input("Yıl", min_value=2020, max_value=2100, value=dt.date.today().year, step=1)
+        # YENİ (sabit anahtarlar)
+        ana = st.text_input("Genel isim", value="hezarfen", key="mn_genel_input")
+        yil = st.number_input("Yıl", min_value=2020, max_value=2100,
+                            value=dt.date.today().year, step=1, key="mn_yil_input")
     with colB:
         rotastr = st.text_input(
             "Tablo listesi (rotaları '/' ile ayır)",
@@ -670,9 +804,160 @@ def _kayitlari_goruntule(st):
 
 
 
+
+
+
+def _sim_veri_girisi(st):
+    """Simülatör süreleri (HH:MM:SS) + İPTAL sim süreleri; kaydet/yükle/grafik."""
+    import re, io, sqlite3, plotly.express as px, math
+
+    st.markdown("### 🕹️ Sim Girişi (meydan.db)")
+    colA, colB = st.columns([1,2])
+    with colA:
+        genel = st.text_input("Genel isim", value="hezarfen", key="sim_genel_input")
+        yil = st.number_input("Yıl", min_value=2020, max_value=2100,
+                              value=dt.date.today().year, step=1, key="sim_yil_input")
+    with colB:
+        st.caption(f"DB tablo adı: `{_sim_table_name(genel)}`")
+
+    # Kolonlar
+    sim_cols       = [f"{AY_ADLARI[m]} - Sim Süresi" for m in range(1,13)]
+    sim_cancel_cols= [f"{AY_ADLARI[m]} - İptal Sim Süresi" for m in range(1,13)]
+    yil_toplam_sim     = f"{yil} Toplamı - Sim Süresi"
+    yil_toplam_sim_ipt = f"{yil} Toplamı - İptal Sim Süresi"
+
+    # Başlangıç veri
+    default_types = ["DA-20 SIM", "S201 SIM", "ZLIN Z242L SIM"]
+    data = []
+    for t in default_types:
+        row = {"Uçak Tipi": t}
+        for c in sim_cols:        row[c] = "00:00"
+        for c in sim_cancel_cols: row[c] = "00:00"
+        row[yil_toplam_sim]     = "00:00:00"
+        row[yil_toplam_sim_ipt] = "00:00:00"
+        data.append(row)
+    df_init = pd.DataFrame(data)
+
+    # Yükle/Kaydet
+    colL, colR = st.columns(2)
+    with colL: do_load = st.button("📥 DB’den Yükle (Sim)")
+    with colR: do_save = st.button("💾 DB’ye Kaydet (Sim)")
+
+    base = df_init.copy()
+    if do_load:
+        with sqlite3.connect(MEYDAN_DB_PATH) as conn:
+            loaded = _load_sim_year(conn, genel, int(yil))
+        if loaded is not None and not loaded.empty:
+            base = loaded.copy()
+            s_tot  = sum(base[c].apply(_time_to_seconds) for c in sim_cols)
+            si_tot = sum(base[c].apply(_time_to_seconds) for c in sim_cancel_cols)
+            base[yil_toplam_sim]     = s_tot.apply(_seconds_to_hhmmss)
+            base[yil_toplam_sim_ipt] = si_tot.apply(_seconds_to_hhmmss)
+            st.success("Sim verileri yüklendi.")
+        else:
+            st.info("Bu yıl için sim kaydı yok; boş şablon açıldı.")
+
+    # Editör
+    DUR_RE = re.compile(r"^\d{1,5}:\d{2}(:\d{2})?$")
+    cfg = {
+        "Uçak Tipi": st.column_config.TextColumn("Uçak/Sim Tipi"),
+        yil_toplam_sim:     st.column_config.TextColumn(yil_toplam_sim, disabled=True),
+        yil_toplam_sim_ipt: st.column_config.TextColumn(yil_toplam_sim_ipt, disabled=True),
+    }
+    for c in sim_cols:
+        cfg[c] = st.column_config.TextColumn(c, help="HH:MM veya HH:MM:SS — 24h+ olabilir (örn. 1039:00)")
+    for c in sim_cancel_cols:
+        cfg[c] = st.column_config.TextColumn(c, help="İptal (HH:MM veya HH:MM:SS)")
+
+    edit = st.data_editor(
+        base, column_config=cfg, use_container_width=True, num_rows="dynamic",
+        hide_index=True, key=f"sim_edit_{_safe_name(genel)}_{yil}"
+    )
+    if edit.empty:
+        st.warning("Tablo boş.")
+        return
+
+    # Doğrulama + toplamlar
+    for i,row in edit.iterrows():
+        for c in (*sim_cols, *sim_cancel_cols):
+            v = str(row.get(c,"")).strip()
+            if v=="" or not DUR_RE.match(v):
+                edit.loc[i,c] = "00:00"
+    s_tot  = sum(edit[c].apply(_time_to_seconds) for c in sim_cols)
+    si_tot = sum(edit[c].apply(_time_to_seconds) for c in sim_cancel_cols)
+    edit[yil_toplam_sim]     = s_tot.apply(_seconds_to_hhmmss)
+    edit[yil_toplam_sim_ipt] = si_tot.apply(_seconds_to_hhmmss)
+
+    # Kaydet
+    if do_save:
+        pure = edit[["Uçak Tipi", *sim_cols, *sim_cancel_cols]].copy()
+        with sqlite3.connect(MEYDAN_DB_PATH) as conn:
+            _save_sim_year(conn, genel, int(yil), pure, sim_cols, sim_cancel_cols)
+            conn.commit()
+        st.success(f"Sim verileri kaydedildi → `{_sim_table_name(genel)}` • {yil}")
+
+    # Göster + grafik
+    st.markdown("#### 📋 Sim Toplamları")
+    st.dataframe(edit, use_container_width=True)
+
+    # Yardımcı: Y ekseni HH:MM:SS
+    def _apply_yaxis_hhmmss_local(fig, max_sec):
+        STEPS = [60,120,300,600,900,1800,3600,7200,10800,14400,21600,28800,43200,86400]
+        target = max(max_sec,1) / 5
+        step = next((s for s in STEPS if s >= target), STEPS[-1])
+        ticks = [i*step for i in range(0, int(math.ceil(max(max_sec,1)/step))+1)]
+        fig.update_yaxes(tickmode="array", tickvals=ticks, ticktext=[_seconds_to_hhmmss(t) for t in ticks], title=None)
+        fig.update_yaxes(range=[0, ticks[-1] if ticks else max_sec])
+
+    # Aylık toplam grafik (SIM)
+    import plotly.express as px
+    aylik_s, aylik_si = [], []
+    max_s = max_si = 0
+    for m in range(1,13):
+        s  = int(edit[sim_cols[m-1]].apply(_time_to_seconds).sum())
+        si = int(edit[sim_cancel_cols[m-1]].apply(_time_to_seconds).sum())
+        max_s  = max(max_s, s);   max_si = max(max_si, si)
+        aylik_s.append({"Ay": AY_ADLARI[m], "Süre (sn)": s,  "Süre (HH:MM:SS)": _seconds_to_hhmmss(s)})
+        aylik_si.append({"Ay": AY_ADLARI[m], "Süre (sn)": si, "Süre (HH:MM:SS)": _seconds_to_hhmmss(si)})
+
+    st.markdown("#### 📊 Aylık Toplam Sim Süresi")
+    fig_s = px.bar(pd.DataFrame(aylik_s), x="Ay", y="Süre (sn)", text="Süre (HH:MM:SS)")
+    fig_s.update_traces(textposition="outside", hovertemplate="%{x}<br>Sim: %{text}")
+    _apply_yaxis_hhmmss_local(fig_s, max_s)
+    st.plotly_chart(fig_s, use_container_width=True, key=f"sim_chart_norm_{_safe_name(genel)}_{yil}")
+
+    st.markdown("#### 📊 Aylık İptal Sim Süresi")
+    fig_si = px.bar(pd.DataFrame(aylik_si), x="Ay", y="Süre (sn)", text="Süre (HH:MM:SS)")
+    fig_si.update_traces(textposition="outside", hovertemplate="%{x}<br>İptal Sim: %{text}")
+    _apply_yaxis_hhmmss_local(fig_si, max_si)
+    st.plotly_chart(fig_si, use_container_width=True, key=f"sim_chart_cancel_{_safe_name(genel)}_{yil}")
+
+    # Excel indir
+    out = edit.copy()
+    for c in (*sim_cols, *sim_cancel_cols):
+        out[c] = out[c].apply(lambda v: _seconds_to_hhmmss(_time_to_seconds(v)) if pd.notna(v) else "00:00:00")
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        out.to_excel(writer, sheet_name=f"{_safe_name(genel)}_{yil}_sim", index=False)
+    st.download_button(
+        "⬇️ Excel İndir (Sim • Seçili Genel/Yıl)",
+        data=buf.getvalue(),
+        file_name=f"{_safe_name(genel)}_{yil}_sim.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_sim_{_safe_name(genel)}_{yil}"
+    )
+
+
+
+
+
+
+
+
 def _genel_toplam_tum_ana(st):
-    """Tüm ANA isimleri (tüm rotalar/tablolar) bir araya getirerek seçilen yıl için genel toplam.
-       Y ekseni ve metinler HH:MM:SS formatındadır.
+    """Tüm GENEL isimler (tüm rotalar + SIM) için seçilen yıl genel toplam.
+       SIM iptal süreleri de 'İptal' toplamlarına eklenir.
+       Y ekseni ve metinler HH:MM:SS.
     """
     import sqlite3, pandas as pd, plotly.express as px, io, math
 
@@ -682,24 +967,25 @@ def _genel_toplam_tum_ana(st):
     def _apply_yaxis_hhmmss(fig, max_sec: int, approx_ticks: int = 6):
         if max_sec is None or max_sec <= 0:
             max_sec = 3600
-        STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 14400,
-                 21600, 28800, 43200, 86400, 172800, 259200, 604800]
+        STEPS = [60,120,300,600,900,1800,3600,7200,10800,14400,21600,28800,43200,86400,172800,259200,604800]
         target = max_sec / max(1, (approx_ticks - 1))
         step = next((s for s in STEPS if s >= target), STEPS[-1])
         top_mult = math.ceil(max_sec / step)
         tickvals = [i * step for i in range(0, top_mult + 1)]
-        ticktext = [_seconds_to_hhmmss(v) for v in tickvals]
-        fig.update_yaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext, title=None)
+        fig.update_yaxes(tickmode="array", tickvals=tickvals,
+                         ticktext=[_seconds_to_hhmmss(v) for v in tickvals], title=None)
         fig.update_yaxes(range=[0, tickvals[-1] if tickvals else max_sec])
 
-    st.markdown("### 🌐 Genel Toplam — Tüm GENEL İsimler")
+    st.markdown("### 🌐 Genel Toplam — Tüm Genel İsimler")
 
-    # Tüm tablolardan yıl havuzu
+    # --- Meta & Yıl havuzu ---
     with sqlite3.connect(MEYDAN_DB_PATH) as conn:
         _ensure_meta(conn)
         meta = pd.read_sql_query("SELECT ana, route FROM meydan_meta ORDER BY ana, route", conn)
+        _ensure_meta_sim(conn)
+        meta_sim = pd.read_sql_query(f"SELECT genel, table_name FROM {SIM_META} ORDER BY genel", conn)
 
-        if meta.empty:
+        if meta.empty and meta_sim.empty:
             st.info("Henüz kayıt yok.")
             return
 
@@ -712,20 +998,22 @@ def _genel_toplam_tum_ana(st):
                     years.update(yrs_df["yil"].dropna().astype(int).tolist())
             except Exception:
                 pass
+        for _, rr in meta_sim.iterrows():
+            tbl = rr["table_name"]
+            try:
+                yrs_df = pd.read_sql_query(f"SELECT DISTINCT yil FROM {tbl} ORDER BY yil DESC", conn)
+                if not yrs_df.empty:
+                    years.update(yrs_df["yil"].dropna().astype(int).tolist())
+            except Exception:
+                pass
 
     if not years:
         st.info("Hiç yıl bulunamadı.")
         return
 
-    yil_all = st.selectbox("Yıl (Tüm  genel toplam)", sorted(years, reverse=True), key="allana_yil")
+    yil_all = st.selectbox("Yıl (Tüm Genel toplam)", sorted(years, reverse=True), key="allgenel_yil")
 
-    # Aylık kolon adları
-    saat_cols  = [f"{AY_ADLARI[m]} - Uçuş Saati" for m in range(1,13)]
-    iptal_cols = [f"{AY_ADLARI[m]} - İptal Edilen" for m in range(1,13)]
-    yil_toplam_saat  = f"{yil_all} Toplamı - Uçuş Saati"
-    yil_toplam_iptal = f"{yil_all} Toplamı - İptal Edilen"
-
-    # Tüm tablolardan veriyi çek ve saniye bazında birleştir
+    # --- Rota verileri (u_=uçuş, i_=iptal) ---
     frames = []
     with sqlite3.connect(MEYDAN_DB_PATH) as conn:
         for _, rr in meta.iterrows():
@@ -738,20 +1026,51 @@ def _genel_toplam_tum_ana(st):
                 sec_df[f"u_{m}"] = df_loaded[f"{AY_ADLARI[m]} - Uçuş Saati"].apply(_time_to_seconds)
                 sec_df[f"i_{m}"] = df_loaded[f"{AY_ADLARI[m]} - İptal Edilen"].apply(_time_to_seconds)
             frames.append(sec_df)
+    grp = (pd.concat(frames, ignore_index=True).groupby("Uçak Tipi", as_index=True).sum(numeric_only=True)
+           if frames else pd.DataFrame())
 
-    if not frames:
+    # --- SIM verileri (s_=sim, sc_=sim iptal) ---
+    sim_frames = []
+    with sqlite3.connect(MEYDAN_DB_PATH) as conn:
+        for _, rr in meta_sim.iterrows():
+            genel = rr["genel"]
+            df_sim = _load_sim_year(conn, genel, int(yil_all))
+            if df_sim is None or df_sim.empty:
+                continue
+            tmp = pd.DataFrame()
+            tmp["Uçak Tipi"] = df_sim["Uçak Tipi"].astype(str)
+            for m in range(1,13):
+                tmp[f"s_{m}"]  = df_sim[f"{AY_ADLARI[m]} - Sim Süresi"].apply(_time_to_seconds)
+                tmp[f"sc_{m}"] = df_sim[f"{AY_ADLARI[m]} - İptal Sim Süresi"].apply(_time_to_seconds)
+            sim_frames.append(tmp)
+    sim_grp = (pd.concat(sim_frames, ignore_index=True).groupby("Uçak Tipi", as_index=True).sum(numeric_only=True)
+               if sim_frames else pd.DataFrame())
+
+    # --- SIM'i uçuş ve iptal toplamlarına EKLE ---
+    if grp.empty and not sim_grp.empty:
+        grp = sim_grp.rename(columns={f"s_{m}": f"u_{m}" for m in range(1,13)})
+        for m in range(1,13):
+            grp[f"i_{m}"] = sim_grp.get(f"sc_{m}", 0)
+    elif not sim_grp.empty:
+        idx = grp.index.union(sim_grp.index)
+        grp = grp.reindex(idx, fill_value=0)
+        add = sim_grp.reindex(idx).fillna(0)
+        for m in range(1,13):
+            grp[f"u_{m}"] = grp.get(f"u_{m}", 0) + add.get(f"s_{m}", 0)
+            grp[f"i_{m}"] = grp.get(f"i_{m}", 0) + add.get(f"sc_{m}", 0)
+
+    if grp.empty:
         st.info("Seçilen yıl için veri bulunamadı.")
         return
 
-    sec_all = pd.concat(frames, ignore_index=True)
-    grp = sec_all.groupby("Uçak Tipi", as_index=True).sum(numeric_only=True)
-
-    # Görüntü tablosu (HH:MM:SS)
+    # --- Görünüm tablosu (HH:MM:SS) ---
     disp = pd.DataFrame({"Uçak Tipi": grp.index})
     for m in range(1,13):
-        disp[f"{AY_ADLARI[m]} - Uçuş Saati"]  = grp[f"u_{m}"].apply(_seconds_to_hhmmss).values
+        disp[f"{AY_ADLARI[m]} - Uçuş Saati"]   = grp[f"u_{m}"].apply(_seconds_to_hhmmss).values
         disp[f"{AY_ADLARI[m]} - İptal Edilen"] = grp[f"i_{m}"].apply(_seconds_to_hhmmss).values
 
+    yil_toplam_saat  = f"{yil_all} Toplamı - Uçuş Saati"
+    yil_toplam_iptal = f"{yil_all} Toplamı - İptal Edilen"
     tot_u = sum(grp[f"u_{m}"] for m in range(1,13))
     tot_i = sum(grp[f"i_{m}"] for m in range(1,13))
     disp[yil_toplam_saat]  = tot_u.apply(_seconds_to_hhmmss).values
@@ -766,8 +1085,9 @@ def _genel_toplam_tum_ana(st):
     disp_total = pd.concat([disp, pd.DataFrame([total_row])], ignore_index=True)
 
     st.dataframe(disp_total, use_container_width=True)
+    st.caption("Not: Uçuş saatlerine **SIM** süreleri; İptal toplamlarına da **İPTAL SIM** süreleri dahildir.")
 
-    # Aylık toplam grafikler (y = saniye, eksen HH:MM:SS)
+    # --- Grafikler (y=sn, Y ekseni HH:MM:SS) ---
     aylik_u, aylik_i = [], []
     max_u = max_i = 0
     for m in range(1,13):
@@ -780,17 +1100,15 @@ def _genel_toplam_tum_ana(st):
     fig_u = px.bar(pd.DataFrame(aylik_u), x="Ay", y="Süre (sn)", text="Süre (HH:MM:SS)")
     fig_u.update_traces(textposition="outside", hovertemplate="%{x}<br>Süre: %{text}")
     _apply_yaxis_hhmmss(fig_u, max_u)
-    st.plotly_chart(fig_u, use_container_width=True,
-                    key=_chart_key_local("allana_total_hours", yil_all))
+    st.plotly_chart(fig_u, use_container_width=True, key=_chart_key_local("allgenel_total_hours", yil_all))
 
-    st.markdown(f"#### 📊 Aylık İptal Saati - GENEL ({yil_all})")
+    st.markdown(f"#### 📊 Aylık İptal Saati — Genel ({yil_all})")
     fig_i = px.bar(pd.DataFrame(aylik_i), x="Ay", y="Süre (sn)", text="Süre (HH:MM:SS)")
     fig_i.update_traces(textposition="outside", hovertemplate="%{x}<br>İptal: %{text}")
     _apply_yaxis_hhmmss(fig_i, max_i)
-    st.plotly_chart(fig_i, use_container_width=True,
-                    key=_chart_key_local("allana_total_cancel", yil_all))
+    st.plotly_chart(fig_i, use_container_width=True, key=_chart_key_local("allgenel_total_cancel", yil_all))
 
-    # Uçak Tipine göre stacked (uçuş & iptal)
+    # --- Uçak Tipine Göre Stacked ---
     stack_u, stack_i = [], []
     for ac in grp.index:
         for m in range(1,13):
@@ -798,28 +1116,30 @@ def _genel_toplam_tum_ana(st):
             stack_u.append({"Ay": AY_ADLARI[m], "Uçak Tipi": ac, "Süre (sn)": su, "Süre (HH:MM:SS)": _seconds_to_hhmmss(su)})
             stack_i.append({"Ay": AY_ADLARI[m], "Uçak Tipi": ac, "Süre (sn)": si, "Süre (HH:MM:SS)": _seconds_to_hhmmss(si)})
 
-    st.markdown(f"#### 🧩 Uçak Tipine Göre Aylık Uçuş Saati (Stacked) — GENEL ({yil_all})")
-    fig_us = px.bar(pd.DataFrame(stack_u), x="Ay", y="Süre (sn)", color="Uçak Tipi", barmode="stack", text="Süre (HH:MM:SS)")
+    st.markdown(f"#### 🧩 Uçak Tipine Göre Aylık Uçuş Saati (Stacked) — Genel ({yil_all})")
+    fig_us = px.bar(pd.DataFrame(stack_u), x="Ay", y="Süre (sn)", color="Uçak Tipi",
+                    barmode="stack", text="Süre (HH:MM:SS)")
     fig_us.update_traces(hovertemplate="%{x}<br>%{legendgroup}: %{text}")
     _apply_yaxis_hhmmss(fig_us, max_u)
-    st.plotly_chart(fig_us, use_container_width=True,
-                    key=_chart_key_local("allana_stack_hours", yil_all))
+    st.plotly_chart(fig_us, use_container_width=True, key=_chart_key_local("allgenel_stack_hours", yil_all))
 
-    st.markdown(f"#### 🧩 Uçak Tipine Göre Aylık İptal Saati (Stacked) — GENEL ({yil_all})")
-    fig_is = px.bar(pd.DataFrame(stack_i), x="Ay", y="Süre (sn)", color="Uçak Tipi", barmode="stack", text="Süre (HH:MM:SS)")
+    st.markdown(f"#### 🧩 Uçak Tipine Göre Aylık İptal Saati (Stacked) — Genel ({yil_all})")
+    fig_is = px.bar(pd.DataFrame(stack_i), x="Ay", y="Süre (sn)", color="Uçak Tipi",
+                    barmode="stack", text="Süre (HH:MM:SS)")
     fig_is.update_traces(hovertemplate="%{x}<br>%{legendgroup}: %{text}")
     _apply_yaxis_hhmmss(fig_is, max_i)
-    st.plotly_chart(fig_is, use_container_width=True,
-                    key=_chart_key_local("allana_stack_cancel", yil_all))
+    st.plotly_chart(fig_is, use_container_width=True, key=_chart_key_local("allgenel_stack_cancel", yil_all))
 
-    # Excel indirme
+    # Excel
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        disp_total.to_excel(writer, sheet_name=f"tum_ana_{yil_all}", index=False)
+        disp_total.to_excel(writer, sheet_name=f"tum_genel_{yil_all}", index=False)
     st.download_button(
-        "⬇️ Excel İndir (• Genel Toplam)",
+        "⬇️ Excel İndir (Genel Toplam • Tüm Genel)",
         data=buf.getvalue(),
-        file_name=f"tum_ana_{yil_all}.xlsx",
+        file_name=f"tum_genel_{yil_all}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=_chart_key_local("dl_allana_total", yil_all)
+        key=_chart_key_local("dl_allgenel_total", yil_all)
     )
+
+

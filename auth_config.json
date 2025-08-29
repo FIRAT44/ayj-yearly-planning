@@ -26,7 +26,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
@@ -39,7 +39,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
@@ -52,7 +52,7 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar"],
+        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
           "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
