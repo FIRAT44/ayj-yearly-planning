@@ -126,6 +126,8 @@ def tab_naeron_goruntule(st):
 
 
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'CR ST' WHERE \"Görev\" = 'CR-S/T'   AND \"Öğrenci Pilot\" LIKE '130%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'CPL ST(ME)' WHERE \"Görev\" = 'MEP CPL  ST'   AND \"Öğrenci Pilot\" LIKE '130%'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-38' WHERE \"Görev\" = 'PIF-38, PIF-39'   AND \"Öğrenci Pilot\" LIKE '130%'",
 
                     """
 UPDATE naeron_ucuslar
