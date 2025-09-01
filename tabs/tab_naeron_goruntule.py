@@ -120,6 +120,16 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-7'    WHERE \"Görev\" = 'MCC B-7'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-8'    WHERE \"Görev\" = 'MCC B-8'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-B-9'    WHERE \"Görev\" = 'MCC B-9'      AND \"Öğrenci Pilot\" LIKE '132%'",
+
+
+
+
+
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC A-12 PT'   AND \"Öğrenci Pilot\" LIKE '133%'",
+
+
+
+                    
                     # ... diğer 132.* MCC-A-* görevleri benzer biçimde ...
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '127%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EÐT.TKR(SIM)' AND \"Öğrenci Pilot\" LIKE '128%'",
