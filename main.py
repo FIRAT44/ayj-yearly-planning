@@ -223,7 +223,7 @@ elif menu == "MEYDAN İSTATİSTİKLERİ":
 
 
 elif menu == "📊 Analiz ve Raporlar":
-    analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
+    analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator"]
     tab_sec = st.radio("📊 Rapor ve Analiz Sekmesi", _allowed_tabs("📊 Analiz ve Raporlar", analiz_all_tabs), horizontal=True)
     # (Aşağıdaki if-elif blokların aynı kalsın)
     
@@ -240,6 +240,30 @@ elif menu == "📊 Analiz ve Raporlar":
         conn_naeron = sqlite3.connect("naeron_kayitlari.db", check_same_thread=False)
         tab_ogrenci_ozet_sadece_eksik(st, conn_plan)
     
+
+    elif tab_sec == "Uçaklar":
+        from tabs.planes.planAndSim import tab_naeron_kayitlari
+        tab_naeron_kayitlari(st)
+        
+
+    elif tab_sec == "Görev İsimleri":
+        from tabs.Gorev_Isimleri.tab_gorev_isimleri import tab_gorev_isimleri
+        tab_gorev_isimleri(st, conn)
+
+
+
+    elif tab_sec == "Uçuş Plan Karşılaştırması":
+        from tabs.Ucus_Plan_Karsilastirma.ucus_plan_karsilastirma import tab_ihtiyac_analizi_karsilastirma
+        tab_ihtiyac_analizi_karsilastirma(st, conn)
+
+
+
+    elif tab_sec == "OZ calculator":
+        from tabs.OZU.ozu_calc import tab_donem_ogrenci_liste_e1_e20_exact_per_student_with_diff
+        tab_donem_ogrenci_liste_e1_e20_exact_per_student_with_diff(st,conn)
+
+
+
 
     
     elif tab_sec == "Dönem Raporu":
@@ -347,3 +371,4 @@ elif menu == "🔄 FAMS → Naeron":
 elif menu == "Firebase Bağlantısı":
     from tabs.firebase.firebase_connect import firestorea_tarih_araliginda_veri_yukle_ve_goster_unique_ucus_no
     firestorea_tarih_araliginda_veri_yukle_ve_goster_unique_ucus_no()
+
