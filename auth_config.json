@@ -29,7 +29,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Phase Program"]
         }
       }
     },
@@ -42,7 +42,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Phase Program"]
         }
       }
     },
@@ -55,7 +55,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri"]
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Phase Program"]
         }
       }
     }
