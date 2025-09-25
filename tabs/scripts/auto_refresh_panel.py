@@ -1,7 +1,7 @@
 # tabs/scripts/auto_refresh_panel.py
 
 import math, time as _t
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from typing import Iterable, Optional, Tuple, Any
 
 def auto_refresh_panel(
@@ -41,157 +41,61 @@ def auto_refresh_panel(
 
     • enable_revize_controls=True ise, conn ve revize_donem ile birlikte panel içine
       '🛠️ Otomatik Revize' butonu eklenir. Butona basıldığında:
-          adet = otomatik_global_revize(conn, donem=revize_donem)
-          st.success(f"{revize_donem}. dönem için otomatik revize tamam: {adet} satır güncellendi.")
-    """
-    import random
-    import streamlit.components.v1 as components
 
-    if messages is None:
-        messages = [
-            "Gökler bizim!", "Checklist tamam mı?", "Uçuş güvenliği önce gelir.",
-            "Rüzgâr uygun, plan hazır 😎", "Bugün harika uçuşlar!", "Briefing zamanı!"
-        ]
-    messages = list(messages)
-
-    # ---- yardımcılar ----
-    def _now_str(tz_name: str) -> str:
-        try:
-            from zoneinfo import ZoneInfo
-            return datetime.now(ZoneInfo(tz_name)).strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def _now_obj(tz_name: str) -> datetime:
-        try:
-            from zoneinfo import ZoneInfo
-            return datetime.now(ZoneInfo(tz_name))
-        except Exception:
-            return datetime.now()
-
-    def _is_active_hour(now_dt: datetime, rng: Optional[Tuple[int,int]]) -> bool:
-        if not rng:
-            return True
-        sh, eh = rng
-        h = now_dt.hour
-        if sh == eh:
-            return True  # 24 saat
-        if sh < eh:
-            return (sh <= h < eh)  # aynı gün aralığı (örn 08–17)
-        # geceye saran aralık (örn 22–06)
-        return (h >= sh) or (h < eh)
-
-    # kalan saniyeyi harici kullanmak istersek:
-    def get_next_refresh_seconds(total_seconds: int) -> int:
-        if total_seconds <= 0:
-            return 0
-        return total_seconds - (math.floor(_t.time()) % total_seconds)
-
-    # ---- durum/ayar state'leri ----
-    # panel bazlı kalıcı ayarlar (kullanıcı değişikliklerini hatırla)
-    ss = st.session_state
-    _pfx = f"arp__{key}"
-    pause_state_key = f"{_pfx}__paused"
-    if pause_state_key not in ss:
-        ss[pause_state_key] = bool(start_paused)
-
-    # kullanıcıya ayar sunulacaksa panel içinde değerleri state ile yöneteceğiz
-    # ilk değerler: fonksiyon parametreleri
-    if f"{_pfx}__interval" not in ss:
-        ss[f"{_pfx}__interval"] = float(interval_minutes)
-    if f"{_pfx}__overlay" not in ss:
-        ss[f"{_pfx}__overlay"] = bool(show_fullscreen_message)
-    if f"{_pfx}__msg" not in ss:
-        ss[f"{_pfx}__msg"] = str(message_text)
-    if f"{_pfx}__msgdur" not in ss:
-        ss[f"{_pfx}__msgdur"] = int(message_duration_sec)
-
-    user_interval_minutes = ss[f"{_pfx}__interval"]
-    user_message_text = ss[f"{_pfx}__msg"]
-    user_message_duration = ss[f"{_pfx}__msgdur"]
-    user_overlay_on = ss[f"{_pfx}__overlay"]
-
-    # mesaj rotasyon sayacı
-    if f"{_pfx}__msg_idx" not in ss:
-        ss[f"{_pfx}__msg_idx"] = 0
-
-    # ---- PANEL ----
-    with st.expander(f"{panel_title}", expanded=expanded):
-
-        # üst kısım: anlık saat ve mesaj
-        now_obj = _now_obj(timezone)
-        now_str = _now_str(timezone)
-        st.metric("Şu an", now_str)
-
-        # mesaj seçimi
-        if message_mode == "rotate" and messages:
-            msg = messages[ss[f"{_pfx}__msg_idx"] % len(messages)]
-            ss[f"{_pfx}__msg_idx"] += 1
-        else:
-            msg = random.choice(messages) if messages else ""
-        if not silent and msg:
-            st.success(msg)
-
-        # panel içi kontroller (opsiyonel)
-        extra_cols = 0
-        if show_controls:
-            # kolon düzeni: [otomatik toggle] [şimdi yenile] [overlay test] [ayarlar] [revize butonu?]
-            show_revize_btn = bool(enable_revize_controls and conn is not None and revize_donem)
-            cols_spec = [1, 1, 1, 2] + ([2] if show_revize_btn else [])
-            cols = st.columns(cols_spec)
-
-            # c1: otomatik toggle
-            try:
-                onoff = cols[0].toggle("⏯ Otomatik", value=not ss[pause_state_key], key=f"{key}_tgl")
-            except Exception:
-                onoff = cols[0].checkbox("⏯ Otomatik", value=not ss[pause_state_key], key=f"{key}_tgl")
-            ss[pause_state_key] = (not onoff)
-
-            # c2: şimdi yenile
-            if cols[1].button("♻️ Şimdi yenile", key=f"{key}_force"):
-                st.rerun()
-
-            # c3: overlay test
-            if cols[2].button("🧪 Overlay Test (2 sn)", key=f"{key}_testbtn"):
-                ss[f"{key}_test_overlay"] = True
-
-            # c4: ayarlar
-            with cols[3]:
-                st.caption("Ayarlar")
-                ss[f"{_pfx}__interval"] = st.number_input(
-                    "Yenileme (dk)", min_value=0.1, max_value=120.0,
-                    step=0.1, value=float(ss[f"{_pfx}__interval"]), key=f"{key}_intv"
-                )
-                ss[f"{_pfx}__overlay"] = st.checkbox(
-                    "Tam ekran mesaj", value=bool(ss[f"{_pfx}__overlay"]), key=f"{key}_ovl"
-                )
-                ss[f"{_pfx}__msg"] = st.text_input(
-                    "Mesaj", value=ss[f"{_pfx}__msg"], key=f"{key}_msg"
-                )
-                ss[f"{_pfx}__msgdur"] = st.number_input(
-                    "Mesaj süresi (sn)", min_value=1, max_value=120,
-                    value=int(ss[f"{_pfx}__msgdur"]), step=1, key=f"{key}_mdur"
-                )
-
-            # c5: (opsiyonel) otomatik revize
-            if show_revize_btn:
-                with cols[4]:
-                    st.caption("Revize")
-                    if st.button(f"🛠️ Otomatik Revize (Dönem {revize_donem})", key=f"{key}_revize_btn"):
+                                if enable_revize_controls and conn is not None:
+                if scheduler_error:
+                    st.error(f'Otomatik revize ayarlari yuklenemedi: {scheduler_error}')
+                elif scheduler is not None:
+                    cfg = scheduler.config
+                    with st.expander('Genel tarama otomasyonu', expanded=False):
+                        st.caption('Tum donemler icin genel tarama ve revizeyi planlayin.')
+                        enabled_default = bool(cfg.get('enabled', False))
+                        time_str = cfg.get('run_time', '02:00')
                         try:
-                            # içe aktarma: fonksiyonun modülü projenizde değişebilir
-                            try:
-                                from tabs.scripts.auto_ileriden_gelen import otomatik_global_revize  # type: ignore
-                            except Exception:
-                                # alternatif import yolu: gerekirse burayı kendi projenize göre ayarlayın
-                                from tabs.scripts.auto_ileriden_gelen import otomatik_global_revize  # type: ignore
+                            hour, minute = [int(part) for part in time_str.split(':')[:2]]
+                            time_default = dt_time(hour, minute)
+                        except Exception:
+                            time_default = dt_time(2, 0)
 
-                            adet = otomatik_global_revize(conn, donem=str(revize_donem))
-                            st.success(f"{revize_donem}. dönem için otomatik revize tamam: {adet} satır güncellendi.")
-                        except Exception as e:
-                            st.error(f"Otomatik revize çalıştırılamadı: {e}")
+                        enabled_toggle = st.checkbox('Gunluk otomatik revizeyi etkinlestir', value=enabled_default, key=f"{key}_revize_enabled")
+                        selected_time = st.time_input('Calisma saati', value=time_default, step=timedelta(minutes=5), key=f"{key}_revize_time")
 
-        # son kullanıcı ayarlarını tekrar çek
+                        col_save, col_run = st.columns(2)
+                        if col_save.button('Ayarleri kaydet', key=f"{key}_revize_save"):
+                            cfg['enabled'] = bool(enabled_toggle)
+                            cfg['run_time'] = selected_time.strftime('%H:%M')
+                            scheduler.config = cfg
+                            scheduler.save_config()
+                            st.success('Otomatik revize ayarlari guncellendi.')
+
+                        if col_run.button('Simdi calistir', key=f"{key}_revize_run"):
+                            run_now_result = scheduler.run_now(conn)
+                            status_now = run_now_result.get('status')
+                            summary_now = run_now_result.get('summary', {})
+                            if status_now == 'completed':
+                                st.success(f"Revize tamamlandi: {summary_now.get('gorev_sayisi', 0)} gorev guncellendi.")
+                            elif status_now == 'no_missing':
+                                st.info('Revize calisti ancak guncellenecek kayit bulunmadi.')
+                            elif status_now == 'no_period':
+                                st.warning('Veritabanda planlanan donem bulunamadi.')
+                            else:
+                                st.error(f"Revize tamamlanamadi: {status_now}.")
+                            if run_now_result.get('log_path'):
+                                st.caption(f"Log: {run_now_result['log_path']}")
+
+                        last_status = cfg.get('last_run_status')
+                        last_date = cfg.get('last_run_date')
+                        if last_status:
+                            st.caption(f"Son durum: {last_status} ({last_date})")
+                        if cfg.get('last_run_log'):
+                            st.caption(f"Son log dosyasi: {cfg['last_run_log']}")
+                        if scheduler_result and scheduler_result.get('ran') and scheduler_result.get('reason') != 'forced':
+                            auto_summary = scheduler_result.get('summary', {})
+                            st.success(f"Planlanan otomatik revize tamamlandi: {auto_summary.get('gorev_sayisi', 0)} gorev guncellendi.")
+                            if scheduler_result.get('log_path'):
+                                st.caption(f"Log: {scheduler_result['log_path']}")
+
+            # son kullanici ayarlarini tekrar cek
         user_interval_minutes = float(ss[f"{_pfx}__interval"])
         user_message_text = ss[f"{_pfx}__msg"]
         user_message_duration = int(ss[f"{_pfx}__msgdur"])
