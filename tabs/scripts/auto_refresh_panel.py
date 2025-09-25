@@ -32,17 +32,16 @@ def auto_refresh_panel(
     revize_donem: Optional[str] = "127",    # butonla çalışacak dönem (varsayılan 127)
 ):
     """
-    Streamlit içinde periyodik autorefresh paneli.
-    Yenilemeden *message_duration_sec* saniye önce tam ekran 'Güncelleme devam ediyor…' overlay'i gösterir.
-    • show_controls=True ise panel içinde durdur/başlat, test ve şimdi yenile gibi butonlar gelir.
-    • active_hours=(start_h, end_h) verilirse sadece bu saat aralığında (*timezone*) çalışır.
-      Örn: (22,6) => 22:00–06:00 arası aktif (gece modu). (8,17) => 08:00–17:00 arası aktif (gündüz).
-    • align_to_wall_clock=True ile interval dakika bazlı ise gerçek duvar saatine hizalanır.
+    Streamlit icinde periyodik autorefresh paneli.
+    - show_controls=True ise panel icinde durdur/baslat, test ve simdi yenile gibi butonlar gosterilir.
+    - active_hours parametresi verilirse yalnizca bu saat araliginda (*timezone*) calisir.
+    - align_to_wall_clock=True duvar saatine hizali calismayi saglar.
+    - enable_revize_controls=True ve kullanilabilir bir baglanti verildiginde revize otomasyonu panelde gosterilir.
+    """
+    import random
+    import streamlit.components.v1 as components
 
-    • enable_revize_controls=True ise, conn ve revize_donem ile birlikte panel içine
-      '🛠️ Otomatik Revize' butonu eklenir. Butona basıldığında:
-
-                                if enable_revize_controls and conn is not None:
+            if enable_revize_controls and conn is not None:
                 if scheduler_error:
                     st.error(f'Otomatik revize ayarlari yuklenemedi: {scheduler_error}')
                 elif scheduler is not None:
