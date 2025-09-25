@@ -9,7 +9,7 @@
         "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","Firebase Bağlantısı","Ayarlar","Aralıklı Gorev Hesaplama","MEYDAN İSTATİSTİKLERİ"],
         "tabs": {
           "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator"],
+          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator","Phase Program"],
           "📂 Naeron İşlemleri": ["Naeron Yükle","Naeron Verileri Filtrele","API ile NAERON veri çeekme"],
           "🤖 Revize İşlemleri": ["Bireysel Revize Paneli","Genel tarama","Takvimden Revize","İleriden Giden Plan"],
           "Meteoroloji Verileri": ["Meteoroloji Verileri"],

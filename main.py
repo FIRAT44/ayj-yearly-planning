@@ -223,7 +223,7 @@ elif menu == "MEYDAN İSTATİSTİKLERİ":
 
 
 elif menu == "📊 Analiz ve Raporlar":
-    analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator"]
+    analiz_all_tabs = ["Analiz İşlemleri Sayfası","Haftalık Program","Phase Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator"]
     tab_sec = st.radio("📊 Rapor ve Analiz Sekmesi", _allowed_tabs("📊 Analiz ve Raporlar", analiz_all_tabs), horizontal=True)
     # (Aşağıdaki if-elif blokların aynı kalsın)
     
@@ -234,6 +234,17 @@ elif menu == "📊 Analiz ve Raporlar":
         
         # Burada analiz işlemleri için genel bir sayfa oluşturulabilir.
     
+
+
+    elif tab_sec == "Phase Program":
+        st.subheader("Phase Program")
+        from tabs.weeklyPhase.weekly_Phase import tab_ogrenci_ozet_sadece_eksik
+        tab_ogrenci_ozet_sadece_eksik(st, conn)
+
+
+
+
+
     
     elif tab_sec == "Haftalık Program":
         conn_plan = sqlite3.connect("ucus_egitim.db", check_same_thread=False)
