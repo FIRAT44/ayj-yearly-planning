@@ -304,17 +304,8 @@ elif menu == "Aralıklı Gorev Hesaplama":
     tab_gorev_aralik_ort(st, conn)
 
 elif menu == "Ayarlar":
-    st.subheader("⚙️ Ayarlar")
-    from tabs.scripts.auto_refresh_panel import auto_refresh_panel
-# duvar saatine hizalı, overlay + kısa beep, döngüsel mesaj
-    auto_refresh_panel(
-        st,
-        key="auto5m",
-        enable_revize_controls=True,
-        conn=conn,               # mevcut DB bağlantın
-        revize_donem="127"       # istersen dinamik verebilirsin
-    )
-
+    from tabs.tab_settings import tab_settings
+    tab_settings(st)
 
 elif menu == "📂 Naeron İşlemleri":
     st.caption("📅 Yüklemek istediğiniz günün verisini aşağıdan seçin")
