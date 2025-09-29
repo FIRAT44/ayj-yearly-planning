@@ -116,7 +116,7 @@ def auto_refresh_panel(
             )
 
             if ctrl_cols[1].button("Simdi yenile", key=f"{key}_refresh"):
-                st.experimental_rerun()
+                st.rerun()
 
             if ctrl_cols[2].button("Overlay test", key=f"{key}_overlay_test"):
                 ss[f"{key}_test_overlay"] = True
