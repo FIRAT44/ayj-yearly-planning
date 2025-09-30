@@ -168,6 +168,12 @@ def revize_kayitlar(secili_df, conn, *, logger=None):
         start_idx = indexler[0]
 
         df_filtre = df_ogrenci.iloc[start_idx:].copy()
+        # 🔴 Eksik olan satırları filtrele
+        df_filtre = df_filtre[df_filtre["durum"] == "🔴 Eksik"].reset_index(drop=True)
+        if df_filtre.empty:
+            if logger:
+                logger(f"{secilen_ogrenci} icin revize edilecek 🔴 Eksik gorev bulunamadi.")
+            continue
         durum_text = df_filtre['durum'].fillna('').astype(str)
         mask = durum_text.str.contains('eksik', case=False) | durum_text.str.contains('teorik', case=False)
         df_filtre = df_filtre[mask].reset_index(drop=True)

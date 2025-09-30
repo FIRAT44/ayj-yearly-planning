@@ -331,3 +331,24 @@ def ozet_panel_verisi_hazirla_batch(ogrenci_kodlari, conn, naeron_db_path="naero
         out[kod] = (dfp, phase_toplamlar, toplam_plan, toplam_gercek, toplam_fark, dfn_eksik, last_naeron_date)
 
     return out
+
+# --- Geriye dönük uyum: tek öğrenci için eski API ---
+def ozet_panel_verisi_hazirla(secilen_kod, conn, naeron_db_path="naeron_kayitlari.db", st=None):
+    """
+    Eski `ozet_utils.ozet_panel_verisi_hazirla` ile aynı imzayı koruyan sarmalayıcı.
+    ozet_panel_verisi_hazirla_batch kullanır ve 6 öğeli tuple döndürür.
+    """
+    try:
+        kod = ogrenci_kodu_ayikla(secilen_kod)
+    except Exception:
+        kod = str(secilen_kod).strip()
+
+    sonuc = ozet_panel_verisi_hazirla_batch([kod], conn, naeron_db_path)
+    tup = sonuc.get(kod)
+    if not tup or not isinstance(tup, tuple) or len(tup) < 6:
+        # Eski fonksiyonla aynı türde boş çıktı
+        return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, pd.DataFrame()
+
+    # Batch 7 eleman döndürüyor (sonuncusu last_naeron_date). Eski API 6 eleman bekliyor.
+    df_ogrenci, phase_toplamlar, toplam_plan, toplam_gercek, toplam_fark, df_naeron_eksik, *_ = tup
+    return df_ogrenci, phase_toplamlar, toplam_plan, toplam_gercek, toplam_fark, df_naeron_eksik

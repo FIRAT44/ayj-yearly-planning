@@ -4,7 +4,7 @@ from datetime import datetime
 import io
 import time
 #from tabs.utils.ozet_utils import ozet_panel_verisi_hazirla
-from tabs.utils.ozet_utils import ozet_panel_verisi_hazirla
+from tabs.utils.ozet_utils2 import ozet_panel_verisi_hazirla
 
 def timed(fn):
     def wrapper(*args, **kwargs):
@@ -56,7 +56,11 @@ def yazdir_secili_kayitlar(secili_df, conn):
 
         # Zincirli revize tarihi hesapla
         bugun = datetime.today().date()
-        revize_tarihleri = [bugun + timedelta(days=1)]
+        # Kullanıcı özel başlangıç tarihi seçmişse onu kullan
+        baslangic_tarihi = st.session_state.get("revize_baslangic")
+        if baslangic_tarihi is None:
+            baslangic_tarihi = bugun + timedelta(days=1)
+        revize_tarihleri = [baslangic_tarihi]
         for i in range(1, len(df_filtre)):
             onceki_eski = df_filtre.loc[i-1, "plan_tarihi"].date()
             onceki_yeni = revize_tarihleri[-1]
@@ -123,15 +127,149 @@ def panel(conn):
         # Sadece seçili öğrenci için tablo oluştur
         bugun = pd.to_datetime(datetime.today().date())
         df_ogrenci, *_ = ozet_panel_verisi_hazirla(secilen_ogrenci, conn)
-        df_eksik = df_ogrenci[(df_ogrenci["durum"] == "🔴 Eksik") & (df_ogrenci["plan_tarihi"] < bugun)]
-        if df_eksik.empty:
+        df_ogrenci = df_ogrenci.sort_values("plan_tarihi").reset_index(drop=True)
+
+        # Tüm 🔴 Eksik'leri al (gelecek dahil) ve ayrıca geçmiş 🔴 Eksik'leri da ayrıca hazırla
+        df_eksik_all = df_ogrenci[df_ogrenci["durum"] == "🔴 Eksik"].sort_values("plan_tarihi").reset_index(drop=True)
+        df_eksik_past = df_ogrenci[(df_ogrenci["durum"] == "🔴 Eksik") & (df_ogrenci["plan_tarihi"] < bugun)].sort_values("plan_tarihi").reset_index(drop=True)
+
+        if df_eksik_all.empty:
             st.success("Bu öğrenci için eksik görev bulunamadı.")
             st.session_state["revize_df"] = pd.DataFrame()  # Temizle!
         else:
-            ilk_eksik = df_eksik.sort_values("plan_tarihi").iloc[0]
-            gosterilecekler = ["ogrenci", "plan_tarihi", "gorev_ismi", "sure", "gerceklesen_sure", "durum"]
-            df_secili = pd.DataFrame([{**{"ogrenci": secilen_ogrenci}, **{k: ilk_eksik[k] for k in gosterilecekler if k in ilk_eksik}}])
-            st.session_state["revize_df"] = df_secili
+            ucus_yapilmis_durumlar = ["🟢 Uçuş Yapıldı", "🟣 Eksik Uçuş Saati"]
+            ilk_all_tarih = df_eksik_all.iloc[0]["plan_tarihi"]
+            ucus_sonrasi_var_mi = not df_ogrenci[
+                (df_ogrenci["plan_tarihi"] > ilk_all_tarih) & (df_ogrenci["durum"].isin(ucus_yapilmis_durumlar))
+            ].empty
+
+            # Seçim gerektiriyorsa: Tüm 🔴 Eksik'leri seçenek olarak sun
+            if ucus_sonrasi_var_mi and len(df_eksik_all) > 1:
+                opsiyonlar = []
+                for _, row in df_eksik_all.iterrows():
+                    item = {
+                        "ogrenci": secilen_ogrenci,
+                        "gorev_ismi": row.get("gorev_ismi"),
+                        "plan_tarihi": row.get("plan_tarihi"),
+                        "durum": row.get("durum"),
+                    }
+                    for ek_alan in ["sure", "gerceklesen_sure"]:
+                        if ek_alan in row:
+                            item[ek_alan] = row[ek_alan]
+                    opsiyonlar.append(item)
+                st.session_state["bireysel_soruluyor"] = True
+                st.session_state["bireysel_opsiyonlar"] = opsiyonlar
+                st.session_state["bireysel_secili_ogrenci"] = secilen_ogrenci
+                # Eski tablo kalmasın
+                st.session_state["revize_df"] = pd.DataFrame()
+                st.info(
+                    "İlk 🔴 Eksik görevden sonra uçuş(lar) tespit edildi. Başlangıç olarak hangi 🔴 Eksik görevi seçelim?"
+                )
+            else:
+                # Varsayılan davranış: önce geçmişteki ilk 🔴 Eksik, yoksa tüm 🔴 Eksik içinden ilk
+                if not df_eksik_past.empty:
+                    hedef = df_eksik_past.iloc[0]
+                else:
+                    hedef = df_eksik_all.iloc[0]
+                gosterilecekler = ["ogrenci", "plan_tarihi", "gorev_ismi", "sure", "gerceklesen_sure", "durum"]
+                df_secili = pd.DataFrame(
+                    [
+                        {
+                            **{"ogrenci": secilen_ogrenci},
+                            **{k: hedef[k] for k in gosterilecekler if k in hedef},
+                        }
+                    ]
+                )
+                st.session_state["revize_df"] = df_secili
+                st.session_state.pop("revize_baslangic", None)
+
+    # Eğer bireysel seçim soruluyorsa, seçenek göster ve onay al
+    if st.session_state.get("bireysel_soruluyor"):
+        ops = st.session_state.get("bireysel_opsiyonlar", [])
+        ogr = st.session_state.get("bireysel_secili_ogrenci")
+        if ops:
+            # Gösterim metni
+            def _fmt(o):
+                try:
+                    tarih = o["plan_tarihi"].date()
+                except Exception:
+                    tarih = o["plan_tarihi"]
+                return f"{ogr} | {o['gorev_ismi']} | {tarih}"
+
+            # Varsayılan olarak son eksik'i öner (çoğu durumda aradaki uçuşlardan sonra gelen eksik mantıklı olabilir)
+            default_index = len(ops) - 1
+            secim = st.selectbox(
+                "Başlangıç alınacak 🔴 Eksik görevi seçin",
+                options=list(range(len(ops))),
+                format_func=lambda i: _fmt(ops[i]),
+                index=default_index,
+                key="bireysel_secim_index",
+            )
+
+            if st.button("Seçimi Onayla", key="bireysel_secimi_onayla"):
+                o = ops[secim]
+                gosterilecekler = ["ogrenci", "plan_tarihi", "gorev_ismi", "sure", "gerceklesen_sure", "durum"]
+                # Seçimi tek satırlık DF'e dönüştür
+                df_secili = pd.DataFrame(
+                    [
+                        {
+                            **{"ogrenci": ogr},
+                            **{k: o[k] for k in gosterilecekler if k in o},
+                        }
+                    ]
+                )
+                st.session_state["revize_df"] = df_secili
+                # Temizle
+                st.session_state["bireysel_soruluyor"] = False
+                st.session_state.pop("bireysel_opsiyonlar", None)
+                st.session_state.pop("bireysel_secili_ogrenci", None)
+                st.session_state.pop("revize_baslangic", None)
+
+    # --- Gelişmiş Seçim / Manuel Başlangıç ---
+    if secilen_ogrenci:
+        with st.expander("🔧 Gelişmiş Seçim (Eksik Başlangıcı Manuel Belirle)", expanded=False):
+            try:
+                df_ogrenci_adv, *_ = ozet_panel_verisi_hazirla(secilen_ogrenci, conn)
+            except Exception:
+                df_ogrenci_adv = pd.DataFrame()
+            if df_ogrenci_adv is None or df_ogrenci_adv.empty:
+                st.info("Bu öğrenciye ait plan verisi bulunamadı.")
+            else:
+                df_ogrenci_adv = df_ogrenci_adv.sort_values("plan_tarihi").reset_index(drop=True)
+                df_eksik_adv = df_ogrenci_adv[df_ogrenci_adv["durum"] == "🔴 Eksik"].copy()
+                if df_eksik_adv.empty:
+                    st.success("Bu öğrencide 🔴 Eksik görev bulunmuyor.")
+                else:
+                    # Seçim listesi
+                    df_eksik_adv["_label"] = df_eksik_adv.apply(
+                        lambda r: f"{r.get('gorev_ismi','?')} | {getattr(r.get('plan_tarihi', ''), 'date', lambda: r.get('plan_tarihi',''))()}",
+                        axis=1
+                    )
+                    idx = st.selectbox(
+                        "Başlangıç alınacak 🔴 Eksik görevi seçin:",
+                        options=list(df_eksik_adv.index),
+                        format_func=lambda i: df_eksik_adv.at[i, "_label"],
+                        key="gelismis_secim_index",
+                    )
+                    # Başlangıç tarihi seçimi
+                    import datetime as _dt
+                    _yarin = (_dt.date.today() + _dt.timedelta(days=1))
+                    bas_tarih = st.date_input(
+                        "Revize Başlangıç Tarihi",
+                        value=_yarin,
+                        key="gelismis_baslangic_tarih",
+                    )
+                    col_ok1, col_ok2 = st.columns([1,2])
+                    with col_ok1:
+                        if st.button("Bu eksikten başla", key="gelismis_baslat_btn"):
+                            sec_row = df_eksik_adv.loc[idx]
+                            gosterilecekler = ["ogrenci", "plan_tarihi", "gorev_ismi", "sure", "gerceklesen_sure", "durum"]
+                            df_secili = pd.DataFrame([
+                                {**{"ogrenci": secilen_ogrenci}, **{k: sec_row[k] for k in gosterilecekler if k in sec_row}}
+                            ])
+                            st.session_state["revize_df"] = df_secili
+                            st.session_state["revize_baslangic"] = bas_tarih
+                            st.success("Seçim uygulandı. Aşağıdaki listeden ‘🖨️ Seçilenleri Yazdır’ ile revizeyi tamamlayın.")
 
     if toplu:
         # Tüm dönem için tablo oluştur
@@ -152,6 +290,7 @@ def panel(conn):
                 sonuc_listesi.append(row)
         if sonuc_listesi:
             st.session_state["revize_df"] = pd.DataFrame(sonuc_listesi)
+            st.session_state.pop("revize_baslangic", None)
         else:
             st.success("Bu dönemde eksik görevi olan öğrenci yok.")
             st.session_state["revize_df"] = pd.DataFrame()  # Temizle!
@@ -183,6 +322,8 @@ def panel(conn):
         )
         secili_df = df[df["row_key"].isin(secilenler)].drop(columns=["row_key"])
 
+      
+
         st.markdown("---")
         st.markdown("### 🎯 Seçilen Kayıtlar")
         if secili_df.empty:
@@ -209,6 +350,8 @@ def panel(conn):
         if st.button("🖨️ Seçilenleri Yazdır"):
             yazdir_secili_kayitlar(secili_df, conn)
 
+
+
         # Excel export
         buffer = io.BytesIO()
         df.drop(columns=["row_key"], errors="ignore").to_excel(buffer, index=False, engine="xlsxwriter")
@@ -220,7 +363,8 @@ def panel(conn):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.info("Herhangi bir tarama yapılmadı veya eksik görev bulunamadı.")
+        if not st.session_state.get("bireysel_soruluyor"):
+            st.info("Herhangi bir tarama yapılmadı veya eksik görev bulunamadı.")
 
 # Kullanım:
 # panel(conn)

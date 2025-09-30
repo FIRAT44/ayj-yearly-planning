@@ -5,37 +5,126 @@ import io
 import time
 from tabs.utils.ozet_utils import ozet_panel_verisi_hazirla
 
+# Ay bazlı kaydırma için (yüklü değilse: pip install python-dateutil)
+try:
+    from dateutil.relativedelta import relativedelta
+    _HAS_RELDELTA = True
+except Exception:
+    _HAS_RELDELTA = False
+
+
+def _sec_en_ileri_referans(df: pd.DataFrame, bugun: pd.Timestamp):
+    """
+    df: içinde 'durum' ve 'plan_tarihi' sütunları olan DataFrame
+    bugun: pd.Timestamp; sadece > bugun olan tarihler dikkate alınır
+
+    Dönüş:
+      (ref_tarih, ref_durum) -> ('🟢 Uçuş Yapıldı' veya '🟣 Eksik Uçuş Saati')
+      eğer ileri tarihli 🟢/🟣 yoksa (None, None)
+    """
+    if df is None or df.empty:
+        return None, None
+
+    d = df.copy()
+    d["plan_tarihi"] = pd.to_datetime(d["plan_tarihi"], errors="coerce")
+
+    mask_yesil = (d["durum"] == "🟢 Uçuş Yapıldı") & (d["plan_tarihi"] > bugun)
+    mask_mor   = (d["durum"] == "🟣 Eksik Uçuş Saati") & (d["plan_tarihi"] > bugun)
+
+    max_yesil = d.loc[mask_yesil, "plan_tarihi"].max() if mask_yesil.any() else pd.NaT
+    max_mor   = d.loc[mask_mor,   "plan_tarihi"].max() if mask_mor.any()   else pd.NaT
+
+    if pd.isna(max_yesil) and pd.isna(max_mor):
+        return None, None
+    if pd.isna(max_mor) or (not pd.isna(max_yesil) and max_yesil >= max_mor):
+        return max_yesil.normalize(), "🟢 Uçuş Yapıldı"
+    else:
+        return max_mor.normalize(), "🟣 Eksik Uçuş Saati"
+
+
 def ileride_gidenleri_tespit_et(conn):
 
-
     # --- 4) ENTEGRE TOPLU REVİZE PANELİ ---
-   
     st.header("📢 Tüm Planı Toplu Revize Et (Onaysız Değişiklik YAPMAZ)")
     tum_ogrenciler = pd.read_sql_query("SELECT DISTINCT ogrenci FROM ucus_planlari", conn)["ogrenci"].tolist()
     secilen_ogrenci_revize = st.selectbox("🧑‍🎓 Revize edilecek öğrenciyi seç", tum_ogrenciler, key="revize_ogrenci_sec")
-    
+
+    # 🔄 Kaydırma Modu (öğrenciye özel)
+    kaydirma_modu = st.radio(
+        "Kaydırma Modu",
+        ["Bugüne çek", "Hedef tarihe çek", "Sabit miktar kadar geri al"],
+        horizontal=True,
+        key="revize_kaydirma_modu",
+    )
+
+    hedef_tarih = None
+    sabit_birim = None
+    sabit_miktar = None
+
+    if kaydirma_modu == "Hedef tarihe çek":
+        hedef_tarih = st.date_input("🎯 Hedef tarih", value=datetime.today().date(), key="revize_hedef_tarih")
+    elif kaydirma_modu == "Sabit miktar kadar geri al":
+        sabit_birim = st.radio("Birim", ["Gün", "Ay"], horizontal=True, key="revize_sabit_birim")
+        sabit_miktar = st.number_input("Miktar", min_value=1, value=30, step=1, key="revize_sabit_miktar")
+        if sabit_birim == "Ay" and not _HAS_RELDELTA:
+            st.warning("‘Ay’ bazlı kaydırma için python-dateutil (relativedelta) gerekli. Gün bazına geçebilirsiniz.")
+
     if st.button("🔄 Seçili Öğrencinin Tüm Planını Önizle ve Revize Et", key="btn_revize_onizle"):
         df_all, *_ = ozet_panel_verisi_hazirla(secilen_ogrenci_revize, conn)
-        if df_all.empty:
+        if df_all is None or df_all.empty:
             st.warning("Bu öğrenci için plan bulunamadı.")
             st.session_state["zincir_revize_df"] = None
         else:
-            df_uculmus = df_all[df_all["durum"].isin(["🟢 Uçuş Yapıldı", "🟣 Eksik Uçuş Saati"])]
-            if df_uculmus.empty:
-                st.warning("Bu öğrenci için uçulmuş görev yok, revize yapılmayacak.")
+            # Tarih güvence
+            df_all["plan_tarihi"] = pd.to_datetime(df_all["plan_tarihi"], errors="coerce")
+            bugun = pd.to_datetime(datetime.today().date())
+
+            # 🟢/🟣 ileri tarih içinden referans seç
+            ref_tarih, ref_durum = _sec_en_ileri_referans(df_all, bugun)
+
+            if ref_tarih is None:
+                st.warning("Bu öğrenci için ileri tarihte 🟢/🟣 görev yok, revize yapılmayacak.")
                 st.session_state["zincir_revize_df"] = None
             else:
-                en_son_uculmus_tarih = df_uculmus["plan_tarihi"].max()
-                bugun = pd.to_datetime(datetime.today().date())
-                fark = (en_son_uculmus_tarih - bugun).days
-                st.info(f"Uçulmuş en ileri görev: {en_son_uculmus_tarih.date()} (Bugün: {bugun.date()}) → Fark: {fark} gün")
-                if fark <= 0:
-                    st.success("En ileri uçulmuş görev bugünde veya geçmişte, plana dokunulmayacak.")
+                st.info(f"Referans (en ileri) görev: {ref_tarih.date()} • Statü: {ref_durum}  (Bugün: {bugun.date()})")
+
+                # 🔢 Fark (gün) belirle – ref_tarih esas
+                if kaydirma_modu == "Bugüne çek":
+                    hedef = bugun
+                    fark_gun = int((ref_tarih - hedef).days)
+
+                elif kaydirma_modu == "Hedef tarihe çek":
+                    hedef = pd.to_datetime(hedef_tarih)
+                    if hedef >= ref_tarih:
+                        st.error("Hedef tarih, referans tarihten önce olmalı (geri çekiyoruz).")
+                        st.session_state["zincir_revize_df"] = None
+                        st.stop()
+                    fark_gun = int((ref_tarih - hedef).days)
+
+                else:  # Sabit miktar kadar geri al
+                    miktar = int(sabit_miktar)
+                    if sabit_birim == "Ay":
+                        if _HAS_RELDELTA:
+                            hedef = ref_tarih - relativedelta(months=miktar)
+                            fark_gun = int((ref_tarih - hedef).days)
+                        else:
+                            hedef = ref_tarih - timedelta(days=miktar)
+                            fark_gun = miktar
+                    else:
+                        hedef = ref_tarih - timedelta(days=miktar)
+                        fark_gun = miktar
+
+                if fark_gun <= 0:
+                    st.success("Seçilen moda göre kaydırma gerekmiyor.")
                     st.dataframe(df_all[["ogrenci", "gorev_ismi", "plan_tarihi", "durum"]], use_container_width=True)
                     st.session_state["zincir_revize_df"] = None
                 else:
-                    df_all["yeni_plan_tarihi"] = df_all["plan_tarihi"] - timedelta(days=fark)
-                    st.dataframe(df_all[["ogrenci", "gorev_ismi", "plan_tarihi", "yeni_plan_tarihi", "durum"]], use_container_width=True)
+                    df_all["yeni_plan_tarihi"] = df_all["plan_tarihi"] - pd.to_timedelta(fark_gun, unit="D")
+                    st.write(f"🧮 Referans {ref_durum} {ref_tarih.date()} → {int(fark_gun)} gün geri; tüm plan {int(fark_gun)} gün geri alınacak.")
+                    st.dataframe(
+                        df_all[["ogrenci", "gorev_ismi", "plan_tarihi", "yeni_plan_tarihi", "durum"]],
+                        use_container_width=True
+                    )
                     st.session_state["zincir_revize_df"] = df_all.copy()
 
     # Onay butonu (her zaman en altta!)
@@ -43,21 +132,26 @@ def ileride_gidenleri_tespit_et(conn):
         if st.button("✅ Onayla ve Veritabanında Güncelle", key="btn_revize_update", type="primary"):
             df_all = st.session_state["zincir_revize_df"]
             cursor = conn.cursor()
-            for i, row in df_all.iterrows():
+            guncel = 0
+            for _, row in df_all.iterrows():
+                eski = pd.to_datetime(row["plan_tarihi"])
+                yeni = pd.to_datetime(row["yeni_plan_tarihi"])
+                if pd.isna(eski) or pd.isna(yeni):
+                    continue
                 cursor.execute(
                     "UPDATE ucus_planlari SET plan_tarihi = ? WHERE ogrenci = ? AND gorev_ismi = ? AND plan_tarihi = ?",
-                    (row["yeni_plan_tarihi"].strftime("%Y-%m-%d"), row["ogrenci"], row["gorev_ismi"], row["plan_tarihi"].strftime("%Y-%m-%d"))
+                    (yeni.strftime("%Y-%m-%d"), row["ogrenci"], row["gorev_ismi"], eski.strftime("%Y-%m-%d"))
                 )
+                guncel += 1
             conn.commit()
-            st.success("Tüm plan başarıyla güncellendi! Sayfayı yenileyin.")
+            st.success(f"Tüm plan başarıyla güncellendi! (Toplam {guncel} satır)  •  Sayfayı yenileyebilirsiniz.")
             st.session_state["zincir_revize_df"] = None
-
 
     # --- 5) 🌐 EN ALTA: TOPLU TARA & TOPLU REVİZE ET ---
     st.markdown("---")
     st.header("🌐 Toplu Tara ve Toplu Revize Et")
 
-    # Yerel güvence (dışarıda tanımlı değilse)
+    # Yerel güvence
     ucus_yapilmis_durumlar = ["🟢 Uçuş Yapıldı", "🟣 Eksik Uçuş Saati"]
     gosterilecekler = ["donem", "ogrenci", "plan_tarihi", "gorev_ismi", "sure", "gerceklesen_sure", "durum"]
 
@@ -91,7 +185,7 @@ def ileride_gidenleri_tespit_et(conn):
         except Exception:
             return str(x)
 
-    # ---------- TARa ----------
+    # ---------- TARA ----------
     if tara_clicked:
         bugun = pd.to_datetime(datetime.today().date())
         sonuc = []
@@ -224,6 +318,32 @@ def ileride_gidenleri_tespit_et(conn):
         )
 
     # ---------- REVİZE ----------
+    if 'global_ileri_uculmus_df' in st.session_state and not getattr(st.session_state['global_ileri_uculmus_df'], 'empty', True):
+        # Global kaydırma seçenekleri (öğrenciye özel ile aynı)
+        st.markdown("### 🌐 Global Kaydırma Seçenekleri")
+
+        kaydirma_modu_g = st.radio(
+            "Global Kaydırma Modu",
+            ["Bugüne çek", "Hedef tarihe çek", "Sabit miktar kadar geri al"],
+            horizontal=True,
+            key=f"global_kaydirma_modu_{scope}_{secilen_donem_global or 'ALL'}"
+        )
+        hedef_tarih_g = None
+        sabit_birim_g = None
+        sabit_miktar_g = None
+
+        if kaydirma_modu_g == "Hedef tarihe çek":
+            hedef_tarih_g = st.date_input(
+                "🎯 Global Hedef Tarih",
+                value=datetime.today().date(),
+                key=f"global_hedef_{scope}_{secilen_donem_global or 'ALL'}"
+            )
+        elif kaydirma_modu_g == "Sabit miktar kadar geri al":
+            sabit_birim_g = st.radio("Birim (Global)", ["Gün", "Ay"], horizontal=True, key=f"global_birim_{scope}_{secilen_donem_global or 'ALL'}")
+            sabit_miktar_g = st.number_input("Miktar (Global)", min_value=1, value=30, step=1, key=f"global_miktar_{scope}_{secilen_donem_global or 'ALL'}")
+            if sabit_birim_g == "Ay" and not _HAS_RELDELTA:
+                st.warning("‘Ay’ bazlı kaydırma için python-dateutil (relativedelta) gerekli. Gün bazına geçebilirsiniz.")
+
     if revize_clicked:
         secili = st.session_state.get("global_secili_df")
         if secili is None or secili.empty:
@@ -233,26 +353,53 @@ def ileride_gidenleri_tespit_et(conn):
             cursor = conn.cursor()
             toplam_guncellenen = 0
 
-            # Öğrenciler bazında ilerletilmiş en ileri tarihe göre farkı hesapla ve tüm planı geri al
+            # Öğrenci bazında referans (🟢/🟣) seç → hedefe göre fark → tüm planı zincir halinde geri al
             for ogr in secili["ogrenci"].unique().tolist():
                 df_o, *_ = ozet_panel_verisi_hazirla(ogr, conn)
                 if df_o is None or df_o.empty:
                     continue
 
                 df_o["plan_tarihi"] = pd.to_datetime(df_o["plan_tarihi"], errors="coerce")
-                ileri_o = df_o[df_o["durum"].isin(ucus_yapilmis_durumlar) & (df_o["plan_tarihi"] > bugun)]
-                if ileri_o.empty:
-                    continue
 
-                max_t = ileri_o["plan_tarihi"].max()
-                fark = (max_t - bugun).days
+                ref_tarih, ref_durum = _sec_en_ileri_referans(df_o, bugun)
+                if ref_tarih is None:
+                    continue  # bu öğrenci için ileri 🟢/🟣 yok
+
+                # Global kaydırma modu ve fark
+                _mod_key = f"global_kaydirma_modu_{scope}_{secilen_donem_global or 'ALL'}"
+                kaymod = st.session_state.get(_mod_key, "Bugüne çek")
+
+                if kaymod == "Bugüne çek":
+                    hedef = bugun
+                    fark = int((ref_tarih - hedef).days)
+                elif kaymod == "Hedef tarihe çek":
+                    hedef = pd.to_datetime(st.session_state.get(f"global_hedef_{scope}_{secilen_donem_global or 'ALL'}", bugun.date()))
+                    if hedef >= ref_tarih:
+                        st.warning(f"[{ogr}] Hedef tarih referans tarihten önce olmalı, atlandı. (Ref: {ref_tarih.date()} • {ref_durum})")
+                        continue
+                    fark = int((ref_tarih - hedef).days)
+                else:  # Sabit miktar
+                    birim = st.session_state.get(f"global_birim_{scope}_{secilen_donem_global or 'ALL'}", "Gün")
+                    miktar = int(st.session_state.get(f"global_miktar_{scope}_{secilen_donem_global or 'ALL'}", 30))
+                    if birim == "Ay":
+                        if _HAS_RELDELTA:
+                            hedef = ref_tarih - relativedelta(months=miktar)
+                            fark = int((ref_tarih - hedef).days)
+                        else:
+                            hedef = ref_tarih - timedelta(days=miktar)
+                            fark = miktar
+                    else:
+                        hedef = ref_tarih - timedelta(days=miktar)
+                        fark = miktar
+
                 if fark <= 0:
                     continue
 
-                df_o["yeni_plan_tarihi"] = df_o["plan_tarihi"] - timedelta(days=fark)
+                # Zincir halinde tüm planı geri al
+                df_o["yeni_plan_tarihi"] = df_o["plan_tarihi"] - pd.to_timedelta(fark, unit="D")
                 for _, r in df_o.iterrows():
-                    _pt_old = r["plan_tarihi"]
-                    _pt_new = r["yeni_plan_tarihi"]
+                    _pt_old = pd.to_datetime(r["plan_tarihi"])
+                    _pt_new = pd.to_datetime(r["yeni_plan_tarihi"])
                     if pd.isna(_pt_old) or pd.isna(_pt_new):
                         continue
                     cursor.execute(
