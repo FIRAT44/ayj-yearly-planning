@@ -369,15 +369,14 @@ def tab_ogrenci_ozet_sadece_eksik(
         st.session_state.setdefault("kume_map_by_tip", {})
         kume_state: Dict[str, Dict[str, List[str]]] = st.session_state["kume_map_by_tip"]
         if selected_donem_tipi not in kume_state:
+            # Veritabanından mevcut (kalıcı) tüm kümeleri yükle
             try:
                 kmap_db = _load_kume_map_from_db(conn, selected_donem_tipi)
             except Exception:
                 kmap_db = {}
-            kume_state[selected_donem_tipi] = {
-                "intibak": kmap_db.get("intibak", []),
-                "seyrusefer": kmap_db.get("seyrusefer", []),
-                "gece": kmap_db.get("gece", []),
-            }
+            # Varsayılan kümeler her zaman mevcut olsun
+            all_keys = set(kmap_db.keys()) | {"intibak", "seyrusefer", "gece"}
+            kume_state[selected_donem_tipi] = {k: list(kmap_db.get(k, [])) for k in sorted(all_keys)}
         kmap = kume_state[selected_donem_tipi]
 
         def _filter_defaults(values):
@@ -449,18 +448,31 @@ def tab_ogrenci_ozet_sadece_eksik(
                 kmap[slug] = []
                 st.success(f"Yeni küme eklendi: {slug}")
 
-        # Özel kümeleri düzenleme
+        # Özel kümeleri düzenleme/silme
         custom_keys = [k for k in sorted(kmap.keys()) if k not in {"intibak", "seyrusefer", "gece"}]
         if custom_keys:
             with st.expander("Özel kümeler", expanded=False):
+                to_remove: List[str] = []
                 for ck in custom_keys:
-                    sel = st.multiselect(
-                        ck,
-                        tum_gorevler,
-                        default=kmap.get(ck, []),
-                        key=f"custom_kume_ms_{selected_donem_tipi}_{ck}",
-                    )
-                    kmap[ck] = sel
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        sel = st.multiselect(
+                            ck,
+                            tum_gorevler,
+                            default=_filter_defaults(kmap.get(ck, [])),
+                            key=f"custom_kume_ms_{selected_donem_tipi}_{ck}",
+                        )
+                        kmap[ck] = sel
+                    with c2:
+                        if st.button("Sil", key=f"custom_kume_sil_{selected_donem_tipi}_{ck}"):
+                            to_remove.append(ck)
+                if to_remove:
+                    for ck in to_remove:
+                        try:
+                            del kmap[ck]
+                        except KeyError:
+                            pass
+                    st.success("Silinen kümeler: " + ", ".join(to_remove))
 
         kalici = st.checkbox("Kalici kaydet (gorev_kume_haritasi)", value=False)
         if st.button("Kumeleri Kaydet"):
