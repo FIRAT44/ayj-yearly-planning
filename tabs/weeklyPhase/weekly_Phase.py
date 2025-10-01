@@ -472,7 +472,16 @@ def tab_ogrenci_ozet_sadece_eksik(
                             del kmap[ck]
                         except KeyError:
                             pass
-                    st.success("Silinen kümeler: " + ", ".join(to_remove))
+                        # DB'den de sil (hemen kalıcılaştır)
+                        try:
+                            conn.execute(
+                                "DELETE FROM gorev_kume_haritasi WHERE donem_tipi = ? AND kume = ?",
+                                ((selected_donem_tipi or "").strip(), ck),
+                            )
+                            conn.commit()
+                        except Exception as err:
+                            st.warning(f"Veritabanından silinemedi ({ck}): {err}")
+                    st.success("Silinen kümeler (DB'ye de yansıtıldı): " + ", ".join(to_remove))
 
         kalici = st.checkbox("Kalici kaydet (gorev_kume_haritasi)", value=False)
         if st.button("Kumeleri Kaydet"):
