@@ -362,6 +362,84 @@ def panel(conn):
             file_name=f"ilk_eksik_gorevler_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # --- Ek: Alt kısımda bilgi tabloları ---
+        try:
+            uniq_ogr = df["ogrenci"].dropna().unique().tolist()
+        except Exception:
+            uniq_ogr = []
+
+        # 1) Seçili öğrenci için tüm 🔴 Eksik görevler ve eksikten sonra uçuşlar
+        if secilen_ogrenci and secilen_ogrenci in uniq_ogr:
+            try:
+                df_full, *_ = ozet_panel_verisi_hazirla(secilen_ogrenci, conn)
+            except Exception:
+                df_full = pd.DataFrame()
+            if df_full is not None and not df_full.empty:
+                df_full = df_full.sort_values("plan_tarihi").reset_index(drop=True)
+                df_all_missing = df_full[df_full["durum"] == "🔴 Eksik"].copy()
+                if not df_all_missing.empty:
+                    st.markdown("#### 🔴 Seçili Öğrenci - Tüm Eksik Görevler")
+                    st.dataframe(
+                        df_all_missing[[c for c in ["plan_tarihi","gorev_ismi","durum","Planlanan","Gerçekleşen"] if c in df_all_missing.columns]],
+                        use_container_width=True,
+                    )
+
+                    ilk_eksik_tarih = df_all_missing["plan_tarihi"].min()
+                    ucus_yapilmis_durumlar = ["🟢 Uçuş Yapıldı", "🟣 Eksik Uçuş Saati"]
+                    df_after = df_full[
+                        (df_full["plan_tarihi"] > ilk_eksik_tarih)
+                        & (df_full["durum"].isin(ucus_yapilmis_durumlar))
+                    ].copy()
+                    if not df_after.empty:
+                        st.markdown("#### ✈️ Seçili Öğrenci - Eksikten Sonra Uçulan Görevler")
+                        st.dataframe(
+                            df_after[[c for c in ["plan_tarihi","gorev_ismi","durum","Gerçekleşen"] if c in df_after.columns]],
+                            use_container_width=True,
+                        )
+
+        # 2) Toplu görünümde, eksikten sonra uçuşu olan öğrencileri özetle
+        if len(uniq_ogr) > 1:
+            rows = []
+            ucus_yapilmis_durumlar = ["🟢 Uçuş Yapıldı", "🟣 Eksik Uçuş Saati"]
+            for ogr in uniq_ogr:
+                try:
+                    dfo, *_ = ozet_panel_verisi_hazirla(ogr, conn)
+                except Exception:
+                    dfo = pd.DataFrame()
+                if dfo is None or dfo.empty:
+                    continue
+                dfo = dfo.sort_values("plan_tarihi").reset_index(drop=True)
+                miss = dfo[dfo["durum"] == "🔴 Eksik"].copy()
+                if miss.empty:
+                    continue
+                t0 = miss["plan_tarihi"].min()
+                aft = dfo[(dfo["plan_tarihi"] > t0) & (dfo["durum"].isin(ucus_yapilmis_durumlar))]
+                if aft.empty:
+                    continue
+                # Son uçuş tarihinden sonraki ilk eksik
+                last_flown_date = aft["plan_tarihi"].max()
+                next_missing_df = dfo[(dfo["durum"] == "🔴 Eksik") & (dfo["plan_tarihi"] > last_flown_date)]
+                if not next_missing_df.empty:
+                    nm = next_missing_df.sort_values("plan_tarihi").iloc[0]
+                    sonraki_eksik_tarih = nm["plan_tarihi"].date() if hasattr(nm["plan_tarihi"], 'date') else nm["plan_tarihi"]
+                    sonraki_eksik_gorev = nm.get("gorev_ismi", "-")
+                else:
+                    sonraki_eksik_tarih = "-"
+                    sonraki_eksik_gorev = "-"
+                rows.append({
+                    "ogrenci": ogr,
+                    "ilk_eksik_tarihi": t0.date() if hasattr(t0, 'date') else t0,
+                    "ucus_sonrasi_sayisi": int(len(aft)),
+                    "ilk_ucus_sonrasi_tarih": (aft["plan_tarihi"].min().date() if hasattr(aft["plan_tarihi"].min(), 'date') else aft["plan_tarihi"].min()),
+                    "sonraki_eksik_tarih": sonraki_eksik_tarih,
+                    "sonraki_eksik_gorev": sonraki_eksik_gorev,
+                })
+
+            if rows:
+                st.markdown("#### ✈️ Eksikten Sonra Uçuşu Olan Öğrenciler (Özet)")
+                df_ozet = pd.DataFrame(rows)
+                st.dataframe(df_ozet, use_container_width=True)
     else:
         if not st.session_state.get("bireysel_soruluyor"):
             st.info("Herhangi bir tarama yapılmadı veya eksik görev bulunamadı.")

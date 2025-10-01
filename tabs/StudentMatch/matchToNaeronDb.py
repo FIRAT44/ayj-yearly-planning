@@ -245,6 +245,18 @@ def plan_naeron_eslestirme(st, conn):
             tamamlanan_phaseler = phase_toplamlar[phase_toplamlar["fark"] >= 0]["phase"].tolist()
 
             def guncel_durum(row):
+                # "PPL (A) SKILL TEST" görevi phase tamamlandı diye ⚪ ile işaretlenemez; mutlaka uçulması gerekir.
+                try:
+                    gorev_norm = re.sub(r"[\s\-\(\)]+", "", str(row.get("gorev_ismi", "")).upper())
+                except Exception:
+                    gorev_norm = ""
+
+                ppl_skill_variants = {"PPL (A) SKILL TEST", "PPLST", "PPLAST"}
+
+                if gorev_norm in ppl_skill_variants:
+                    # Mevcut durumu koru (Eksik/Eksik - Beklemede vs.), ⚪ durumuna dönüştürme
+                    return row["durum"]
+
                 if row.get("phase") in tamamlanan_phaseler and row["durum"] in ["🟣 Eksik Uçuş Saati", "🔴 Eksik","🟤 Eksik - Beklemede"]:
                     if row["Gerçekleşen"] == "00:00":
                         return "⚪ Phase Tamamlandı - Uçuş Yapılmadı"
@@ -253,6 +265,14 @@ def plan_naeron_eslestirme(st, conn):
                 return row["durum"]
 
             df_ogrenci["durum"] = df_ogrenci.apply(guncel_durum, axis=1)
+            # PPL (A) SKILL TEST: Uçuş yapılmadıysa asla ⚪ olarak işaretlenmez; her zaman 🔴 Eksik kalır.
+            def _norm_task_for_skill(name):
+                try:
+                    return re.sub(r"[^A-Z0-9]+", "", str(name).upper())
+                except Exception:
+                    return ""
+            mask_skill = df_ogrenci["gorev_ismi"].apply(lambda x: _norm_task_for_skill(x).startswith("PPLASKILLTEST") or _norm_task_for_skill(x) in {"PPLST", "PPLAST"})
+            df_ogrenci.loc[mask_skill & (df_ogrenci["Gerçekleşen"] == "00:00"), "durum"] = "🔴 Eksik"
 
 
 

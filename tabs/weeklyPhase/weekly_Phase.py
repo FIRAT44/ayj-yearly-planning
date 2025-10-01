@@ -419,17 +419,61 @@ def tab_ogrenci_ozet_sadece_eksik(
                 key=f"gece_ms_{selected_donem_tipi}",
             )
 
+        # Yeni küme ekleme
+        st.markdown("---")
+        new_col1, new_col2 = st.columns([3, 1])
+        with new_col1:
+            yeni_kume_adi = st.text_input(
+                "Yeni küme adı",
+                value="",
+                key=f"yeni_kume_adi_{selected_donem_tipi}",
+                placeholder="örn. mcc, ifr, kontrol"
+            )
+        with new_col2:
+            ekle_clicked = st.button("Küme Ekle", key=f"yeni_kume_ekle_{selected_donem_tipi}")
+        if ekle_clicked:
+            raw = (yeni_kume_adi or "").strip()
+            # Basit slug: önce mevcut normalize fonksiyonuyla, sonra güvenli karakter filtresi
+            try:
+                slug = re.sub(r"[^a-z0-9_]+", "", _normalize_text(raw))
+            except Exception:
+                slug = ""
+            reserved = {"intibak", "seyrusefer", "gece"}
+            if not slug:
+                st.warning("Geçerli bir küme adı girin.")
+            elif slug in reserved:
+                st.info("Bu küme zaten varsayılan olarak mevcut.")
+            elif slug in kmap:
+                st.info("Bu adda bir küme zaten var.")
+            else:
+                kmap[slug] = []
+                st.success(f"Yeni küme eklendi: {slug}")
+
+        # Özel kümeleri düzenleme
+        custom_keys = [k for k in sorted(kmap.keys()) if k not in {"intibak", "seyrusefer", "gece"}]
+        if custom_keys:
+            with st.expander("Özel kümeler", expanded=False):
+                for ck in custom_keys:
+                    sel = st.multiselect(
+                        ck,
+                        tum_gorevler,
+                        default=kmap.get(ck, []),
+                        key=f"custom_kume_ms_{selected_donem_tipi}_{ck}",
+                    )
+                    kmap[ck] = sel
+
         kalici = st.checkbox("Kalici kaydet (gorev_kume_haritasi)", value=False)
         if st.button("Kumeleri Kaydet"):
-            kume_state[selected_donem_tipi] = {
-                "intibak": intibak_sel,
-                "seyrusefer": seyrusefer_sel,
-                "gece": gece_sel,
-            }
+            # Varsayılan kümeleri güncelle
+            kmap["intibak"] = intibak_sel
+            kmap["seyrusefer"] = seyrusefer_sel
+            kmap["gece"] = gece_sel
+            # Özel kümeler zaten kmap içinde güncelleniyor
+            kume_state[selected_donem_tipi] = kmap
             st.session_state["kume_map_by_tip"] = kume_state
             if kalici:
                 try:
-                    _save_kume_map_to_db(conn, kume_state[selected_donem_tipi], selected_donem_tipi)
+                    _save_kume_map_to_db(conn, kmap, selected_donem_tipi)
                     st.success("Kumeler veritabanina kaydedildi.")
                 except Exception as err:
                     st.error(f"Veritabanina kaydedilemedi: {err}")
@@ -476,7 +520,7 @@ def tab_ogrenci_ozet_sadece_eksik(
             mevcut_filtreler.append("Donem")
         if "grup" in df_plan.columns:
             mevcut_filtreler.append("Grup")
-        mevcut_filtreler += ["Ogrenci", "Gorev Tipi"]
+        mevcut_filtreler += ["Ogrenci", "Gorev Tipi", "Donem Tipi"]
 
         col_a, col_b = st.columns([1, 2])
         with col_a:
@@ -487,9 +531,18 @@ def tab_ogrenci_ozet_sadece_eksik(
                 key=f"haftalik_filtre_turu_{selected_donem_tipi}",
             )
 
+        # Mevcut kümeleri (varsayılan + özel) dinamik olarak getir
+        mevcut_kumeler = ["intibak", "seyrusefer", "gece"]
+        try:
+            mevcut_kumeler = sorted(
+                set(mevcut_kumeler)
+                | set(st.session_state.get("kume_map_by_tip", {}).get(selected_donem_tipi, {}).keys())
+            )
+        except Exception:
+            pass
         kume_secimi = st.selectbox(
             "Kume filtresi (opsiyonel)",
-            ["(Yok)", "intibak", "seyrusefer", "gece"],
+            ["(Yok)"] + mevcut_kumeler,
             index=0,
             key=f"haftalik_kume_secimi_{selected_donem_tipi}",
         )
@@ -567,6 +620,29 @@ def tab_ogrenci_ozet_sadece_eksik(
                 st.info("Bir gorev tipi secin.")
                 return
             df_plan_filt = df_plan_filt[df_plan_filt["gorev_tipi"].astype(str) == str(sec_tip)]
+
+        elif filtre_turu == "Donem Tipi":
+            # Egitim turu filtrasyonu: donem_bilgileri haritasindan secilen tipe ait donemlerle filtrele
+            with col_b:
+                try:
+                    default_idx = 1 + sorted(donem_tipleri).index(selected_donem_tipi)
+                except Exception:
+                    default_idx = 0
+                sec_tip = st.selectbox(
+                    "Egitim turu (donem tipi) secin",
+                    ["(Seciniz)"] + sorted(donem_tipleri),
+                    index=default_idx if default_idx < (1 + len(donem_tipleri)) else 0,
+                    key=f"haftalik_sec_donem_tipi_{selected_donem_tipi}",
+                )
+            if sec_tip == "(Seciniz)":
+                st.info("Bir egitim turu (donem tipi) secin.")
+                return
+            allowed_by_tip = donemler_by_tip.get(sec_tip, [])
+            if not allowed_by_tip:
+                st.info("Secilen egitim turune ait donem bulunamadi.")
+                return
+            if "donem" in df_plan_filt.columns:
+                df_plan_filt = df_plan_filt[df_plan_filt["donem"].astype(str).isin(allowed_by_tip)]
 
         if kume_secimi != "(Yok)":
             kume_map_tip = st.session_state["kume_map_by_tip"].get(

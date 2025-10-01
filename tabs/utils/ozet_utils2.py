@@ -188,8 +188,8 @@ def format_sure(hours_float):
     return f"{sign}{h:02}:{m:02}"
 
 def normalize_task(name):
-    """Görev adındaki tüm noktalama/boşluk karakterlerini kaldırıp uppercase yapar."""
-    return re.sub(r"[^\w]", "", str(name)).upper()
+    """matchToNaeronDb ile aynı normalizasyon: boşluk ve tireleri kaldır, uppercase."""
+    return re.sub(r"[\s\-]+", "", str(name)).upper()
 
 def get_donem_tipi(donem: str) -> str | None:
     """donem_bilgileri.db içinden donem_tipi'ni döndürür (MPL / ENTEGRE / None)."""
@@ -280,13 +280,8 @@ def ozet_panel_verisi_hazirla_batch(ogrenci_kodlari, conn, naeron_db_path="naero
         dfp["Gerçekleşen"] = dfp["gerceklesen_saat_ondalik"].apply(format_sure)
         dfp["Fark"]        = dfp["fark_saat_ondalik"].apply(format_sure)
 
-        # durum
-        def _durum(row):
-            if row["Planlanan"] == "00:00": return "🟡 Teorik Ders"
-            if row["fark_saat_ondalik"] >= 0: return "🟢 Uçuş Yapıldı"
-            if row["Gerçekleşen"] != "00:00": return "🟣 Eksik Uçuş Saati"
-            return "🔴 Eksik"
-        dfp["durum"] = dfp.apply(_durum, axis=1)
+        # durum (PIC özel mantığı dahil)
+        dfp["durum"] = dfp.apply(durum_pic_renk, axis=1)
 
         # beklemede
         for i in range(len(dfp)):
@@ -295,7 +290,56 @@ def ozet_panel_verisi_hazirla_batch(ogrenci_kodlari, conn, naeron_db_path="naero
                 if (sonraki["durum"].str.contains("🟢 Uçuş Yapıldı")).sum() >= 3:
                     dfp.iat[i, dfp.columns.get_loc("durum")] = "🟤 Eksik - Beklemede"
 
-        # --- döneme göre PIF/SIF kuralları ---
+        # Phase tamamlandı güncellemesi ve özet (varsa)
+        if "phase" in dfp.columns:
+            df_phase = dfp[dfp["phase"].notna()].copy()
+            df_phase["phase"] = df_phase["phase"].astype(str).str.strip()
+
+            ph = (
+                df_phase.groupby("phase")[
+                    ["planlanan_saat_ondalik", "gerceklesen_saat_ondalik"]
+                ]
+                .sum()
+                .reset_index()
+            )
+            ph["fark"] = ph["gerceklesen_saat_ondalik"] - ph["planlanan_saat_ondalik"]
+
+            tamamlanan_phaseler = ph[ph["fark"] >= 0]["phase"].tolist()
+
+            def guncel_durum(row):
+                if row.get("phase") in tamamlanan_phaseler and row["durum"] in [
+                    "🟣 Eksik Uçuş Saati",
+                    "🔴 Eksik",
+                    "🟤 Eksik - Beklemede",
+                ]:
+                    return (
+                        "⚪ Phase Tamamlandı - Uçuş Yapılmadı"
+                        if row["Gerçekleşen"] == "00:00"
+                        else "🔷 Phase Tamamlandı - 🟣 Eksik Uçuş Saati"
+                    )
+                return row["durum"]
+
+            dfp["durum"] = dfp.apply(guncel_durum, axis=1)
+            # PPL (A) SKILL TEST: Uçuş yapılmadıysa asla ⚪ olarak işaretlenmez; her zaman 🔴 Eksik kalır.
+            def _norm_task_for_skill(name):
+                try:
+                    return re.sub(r"[^A-Z0-9]+", "", str(name).upper())
+                except Exception:
+                    return ""
+            _skill_mask = dfp["gorev_ismi"].apply(lambda x: _norm_task_for_skill(x).startswith("PPLASKILLTEST") or _norm_task_for_skill(x) in {"PPLST", "PPLAST"})
+            _no_flight_mask = dfp.get("gerceklesen_saat_ondalik", 0) == 0
+            dfp.loc[_skill_mask & _no_flight_mask, "durum"] = "🔴 Eksik"
+
+            # Phase özeti döndürmek için hazırla (string alanlar dahil)
+            ph["Planlanan"] = ph["planlanan_saat_ondalik"].apply(format_sure)
+            ph["Gerçekleşen"] = ph["gerceklesen_saat_ondalik"].apply(format_sure)
+            ph["Fark"] = ph["fark"].apply(format_sure)
+            ph["durum"] = ph["fark"].apply(lambda x: "✅ Tamamlandı" if x >= 0 else "❌ Tamamlanmadı")
+            phase_toplamlar = ph
+        else:
+            phase_toplamlar = pd.DataFrame()
+
+        # --- döneme göre PIF/SIF kuralları (phase sonrası uygulanır) ---
         secilen_donem = dfp["donem"].iloc[0] if "donem" in dfp.columns and not dfp.empty else None
         donem_tipi = get_donem_tipi(secilen_donem)
         dfp = apply_pif_sif_rules_on_view(
@@ -305,16 +349,6 @@ def ozet_panel_verisi_hazirla_batch(ogrenci_kodlari, conn, naeron_db_path="naero
             donem_tipi=donem_tipi,
         )
         #print(f"Öğrenci {kod} için PIF/SIF kuralları uygulandı: {donem_tipi}")
-
-        # phase özet (varsa)
-        if "phase" in dfp.columns:
-            ph = (dfp.groupby("phase", dropna=False)[["planlanan_saat_ondalik","gerceklesen_saat_ondalik"]]
-                    .sum()
-                    .reset_index())
-            ph["fark"] = ph["gerceklesen_saat_ondalik"] - ph["planlanan_saat_ondalik"]
-            phase_toplamlar = ph
-        else:
-            phase_toplamlar = pd.DataFrame()
 
         # genel toplamlar
         toplam_plan   = float(dfp["planlanan_saat_ondalik"].sum())
