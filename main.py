@@ -1,4 +1,4 @@
-# main.py
+﻿# main.py
 import streamlit as st
 st.set_page_config(
     page_title="AYJET-TECHNOLOGY",
@@ -27,7 +27,7 @@ from tabs.tab_naeron_goruntule import tab_naeron_goruntule
 
 from tabs.weekly_program import tab_ogrenci_ozet_sadece_eksik
 from tabs.tab_donem_ogrenci_yonetimi import tab_donem_ogrenci_yonetimi
-from tabs.tab_taslak_plan import tab_taslak_plan
+
 from tabs.tab_taslak_coklu_gorev import tab_taslak_coklu_gorev
 from tabs.new.excel_to_db_loader import tab_taslak_olustur
 from tabs.openMeteo.open_Meteo_connect_python import ruzgar_verisi_getir
@@ -169,7 +169,7 @@ if not menu:
     st.stop()
 
 if menu == "📋 Planlama":
-    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Taslak Plan","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"]
+    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Planlama Revizyon","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"]
     tab_sec = st.radio("📋 Planlama Sekmesi", _allowed_tabs("📋 Planlama", planlama_all_tabs), horizontal=True)
     
     
@@ -210,8 +210,18 @@ if menu == "📋 Planlama":
         tab_gerceklesen_kayit(st, conn)
     elif tab_sec == "📚 Dönem ve Öğrenci Yönetimi":
         tab_donem_ogrenci_yonetimi(st, conn)
-    elif tab_sec == "Taslak Plan":
-        tab_taslak_plan(st)
+    
+    
+    
+    elif tab_sec == "Planlama Revizyon":
+        from tabs.DonemOgrenci.plan_revize import tab_gorev_revizyonu
+        tab_gorev_revizyonu(st, conn)
+    
+    
+    
+    
+    
+    
     elif tab_sec == "🧪 Taslak Plan Çoklu Görev":
         tab_taslak_coklu_gorev(conn)
     
@@ -373,4 +383,3 @@ elif menu == "🔄 FAMS → Naeron":
 elif menu == "Firebase Bağlantısı":
     from tabs.firebase.firebase_connect import firestorea_tarih_araliginda_veri_yukle_ve_goster_unique_ucus_no
     firestorea_tarih_araliginda_veri_yukle_ve_goster_unique_ucus_no()
-
