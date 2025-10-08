@@ -8,7 +8,7 @@ from tabs.DonemGrupları.donemGrupları import tab_donem_ogrenci_gruplama_custom
 def tab_donem_ogrenci_yonetimi(st, conn):
     st.subheader("📚 Dönem ve Öğrenci Yönetimi")
 
-    sekme1, sekme2,sekme3= st.tabs(["Dönem ve Öğrenciler", "📊 Genel Plan","Dönem Grupları"])
+    sekme1, sekme2,sekme3,sekme4= st.tabs(["Dönem ve Öğrenciler", "📊 Genel Plan","Dönem Grupları","Plan Revizyonu"])
 
     with sekme1:
         cursor = conn.cursor()
@@ -89,6 +89,11 @@ def tab_donem_ogrenci_yonetimi(st, conn):
 
     with sekme3:
         tab_donem_ogrenci_gruplama_custom(st, conn)
+
+    with sekme4:
+        from tabs.DonemOgrenci.plan_revize import tab_gorev_revizyonu
+        tab_gorev_revizyonu()
+
         
 
         

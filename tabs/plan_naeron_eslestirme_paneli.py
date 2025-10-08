@@ -53,6 +53,9 @@ def plan_naeron_eslestirme_ve_elle_duzeltme(st):
     ogrenciler = df_plan["ogrenci"].dropna().unique().tolist()
     tum_eslesmeyenler = []
 
+    if "naeron_eksik_df" not in st.session_state:
+        st.session_state["naeron_eksik_df"] = None
+
     if st.button("🔍 Tüm Öğrencileri Tara ve Eksik Naeron Kayıtlarını Bul"):
         for ogrenci in ogrenciler:
             kod = ogrenci_kodunu_al(ogrenci)
@@ -65,21 +68,94 @@ def plan_naeron_eslestirme_ve_elle_duzeltme(st):
             tum_eslesmeyenler.append(df_naeron_eksik)
 
         if tum_eslesmeyenler:
-            sonuc_df = pd.concat(tum_eslesmeyenler)
-            st.markdown("### 🚨 Tüm Öğrencilerde Planlamada Eşleşmeyen Naeron Kayıtları")
-            st.dataframe(sonuc_df[["Tarih", "Görev", "sure_str", "Öğrenci Pilot", "Plan Öğrenci"]], use_container_width=True)
-
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                sonuc_df.to_excel(writer, index=False, sheet_name="Eksik Naeron")
-                
-            st.download_button(
-                label="📥 Excel Olarak İndir",
-                data=buffer.getvalue(),
-                file_name="eksik_naeron_kayitlari.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            sonuc_df = pd.concat(tum_eslesmeyenler).reset_index(drop=True)
+            st.session_state["naeron_eksik_df"] = sonuc_df
+            st.success(f"{len(sonuc_df)} kayıt bulundu. Aşağıdaki filtrelerden görünümü daraltabilirsiniz.")
         else:
+            st.session_state["naeron_eksik_df"] = None
             st.success("Tüm öğrencilerde Naeron görevleri planla eşleşiyor!")
+
+    mevcut_sonuc_df = st.session_state.get("naeron_eksik_df")
+    if isinstance(mevcut_sonuc_df, pd.DataFrame) and not mevcut_sonuc_df.empty:
+        st.markdown("### 🚨 Tüm Öğrencilerde Planlamada Eşleşmeyen Naeron Kayıtları")
+
+        df_display = mevcut_sonuc_df.copy()
+        df_display["Tarih"] = pd.to_datetime(df_display["Tarih"], errors="coerce")
+
+        plan_ogrenci_sec = sorted(df_display["Plan Öğrenci"].dropna().unique().tolist())
+        gorev_sec = sorted(df_display["Görev"].dropna().unique().tolist())
+        tarih_gecerli = df_display["Tarih"].dropna()
+
+        with st.expander("🔎 Filtreleme", expanded=True):
+            col1, col2 = st.columns(2)
+            secilen_plan_ogrenciler = col1.multiselect("Plan Öğrenci", plan_ogrenci_sec)
+            secilen_gorevler = col2.multiselect("Naeron Görevi", gorev_sec)
+
+            if not tarih_gecerli.empty:
+                min_tarih = tarih_gecerli.min().date()
+                max_tarih = tarih_gecerli.max().date()
+                tarih_araligi = st.date_input(
+                    "Tarih Aralığı",
+                    value=(min_tarih, max_tarih),
+                    min_value=min_tarih,
+                    max_value=max_tarih,
+                    help="Başlangıç ve bitiş tarihlerini seçerek listeyi daraltabilirsiniz."
+                )
+            else:
+                tarih_araligi = ()
+
+            arama_metin = st.text_input(
+                "Metin Arama",
+                placeholder="Örn. öğrenci kodu, isim ya da görev",
+                help="Plan öğrenci, Naeron öğrenci veya görev alanlarında arama yapar."
+            ).strip()
+
+        filtreli_df = df_display.copy()
+
+        if secilen_plan_ogrenciler:
+            filtreli_df = filtreli_df[filtreli_df["Plan Öğrenci"].isin(secilen_plan_ogrenciler)]
+
+        if secilen_gorevler:
+            filtreli_df = filtreli_df[filtreli_df["Görev"].isin(secilen_gorevler)]
+
+        if tarih_araligi and isinstance(tarih_araligi, tuple) and len(tarih_araligi) == 2:
+            baslangic, bitis = tarih_araligi
+            if baslangic and bitis:
+                tarih_series = pd.to_datetime(filtreli_df["Tarih"], errors="coerce")
+                tarih_mask = tarih_series.dt.date.between(baslangic, bitis)
+                filtreli_df = filtreli_df[tarih_mask]
+
+        if arama_metin:
+            arama_metin_lower = arama_metin.lower()
+            arama_mask = (
+                filtreli_df["Plan Öğrenci"].fillna("").str.lower().str.contains(arama_metin_lower)
+                | filtreli_df["Öğrenci Pilot"].fillna("").str.lower().str.contains(arama_metin_lower)
+                | filtreli_df["Görev"].fillna("").str.lower().str.contains(arama_metin_lower)
+            )
+            filtreli_df = filtreli_df[arama_mask]
+
+        filtreli_df = filtreli_df.sort_values(by=["Tarih", "Plan Öğrenci", "Görev"], na_position="last").reset_index(drop=True)
+
+        st.caption(f"{len(filtreli_df)} kayıt listeleniyor.")
+
+        gosterilecek_kolonlar = ["Tarih", "Görev", "sure_str", "Öğrenci Pilot", "Plan Öğrenci"]
+        mevcut_kolonlar = [kolon for kolon in gosterilecek_kolonlar if kolon in filtreli_df.columns]
+
+        if filtreli_df.empty:
+            st.warning("Filtre kriterlerine uyan kayıt bulunamadı.")
+        else:
+            st.dataframe(filtreli_df[mevcut_kolonlar], use_container_width=True)
+
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            filtreli_df.to_excel(writer, index=False, sheet_name="Eksik Naeron")
+
+        st.download_button(
+            label="📥 Filtrelenmiş Sonuçları İndir",
+            data=buffer.getvalue(),
+            file_name="eksik_naeron_kayitlari.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            disabled=filtreli_df.empty
+        )
 
    

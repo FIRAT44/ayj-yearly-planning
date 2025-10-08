@@ -2,6 +2,7 @@
 import pandas as pd
 import sqlite3
 import streamlit as st
+import unicodedata
 
 def tab_naeron_goruntule(st):
     st.subheader("🗂 Naeron Veritabanını Görüntüle, Filtrele, Düzelt, Sil")
@@ -70,6 +71,7 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'E-EGT.TKR.(SE)' WHERE \"Görev\" = 'E-EÐT.TKR.(SE)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'EGT.TKR(SIM)' WHERE \"Görev\" = 'EĞT.TKR(SIM)'",
                     
+                    
                     # PIF görevleri
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-13' WHERE \"Görev\" = 'PIF-13 (ME/SIM)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-14' WHERE \"Görev\" = 'PIF-14 (ME/SIM)'",
@@ -90,14 +92,26 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-29PT' WHERE \"Görev\" = 'PIF-29PT(ME/IR)'",
                     # SXC-7/8/9
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-7'  WHERE \"Görev\" = 'SXC-7(C)'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-7'  WHERE \"Görev\" = 'SXC-7 (C)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-8'  WHERE \"Görev\" = 'SXC-8(C)'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-8'  WHERE \"Görev\" = 'SXC-8 (C)'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-9'  WHERE \"Görev\" = 'SXC-9(C)'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-9'  WHERE \"Görev\" = 'SXC-9 (C)'",
                     # CR-S/T
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'CR-S/T' WHERE \"Görev\" = 'ME CR ST'",
+
+                    #IR ST(ME)
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'IR ST(ME)' WHERE \"Görev\" = 'MEP IR ST'",
+
                     # Dönem bazlı MCC-A-* ve EGT.TKR(SIM)
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC-A-12 PT' AND \"Öğrenci Pilot\" LIKE '127%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC-A-12 PT' AND \"Öğrenci Pilot\" LIKE '128%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-12PT' WHERE \"Görev\" = 'MCC-A-12PT'   AND \"Öğrenci Pilot\" LIKE '131%'",
+                    
+
+
+
+
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-1'    WHERE \"Görev\" = 'MCC A-1'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-2'    WHERE \"Görev\" = 'MCC A-2'      AND \"Öğrenci Pilot\" LIKE '132%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-3'    WHERE \"Görev\" = 'MCC A-3'      AND \"Öğrenci Pilot\" LIKE '132%'",
@@ -144,11 +158,11 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'PIF-38' WHERE \"Görev\" = 'PIF-38, PIF-39'   AND \"Öğrenci Pilot\" LIKE '130%'",
 
                     """
-UPDATE naeron_ucuslar
-SET "Öğrenci Pilot" = TRIM(SUBSTR("Öğrenci Pilot", 1, INSTR("Öğrenci Pilot", ' - ') - 1))
-WHERE "Öğrenci Pilot" LIKE 'OZ% - %'
-  AND INSTR("Öğrenci Pilot", ' - ') > 0
-"""
+                    UPDATE naeron_ucuslar
+                    SET "Öğrenci Pilot" = TRIM(SUBSTR("Öğrenci Pilot", 1, INSTR("Öğrenci Pilot", ' - ') - 1))
+                    WHERE "Öğrenci Pilot" LIKE 'OZ% - %'
+                    AND INSTR("Öğrenci Pilot", ' - ') > 0
+                    """
                 ]
                 # Saat sütunlarını da tek sorguda düzelt
                 sql_statements.append("""
@@ -165,8 +179,37 @@ WHERE "Öğrenci Pilot" LIKE 'OZ% - %'
                         "Flight Time" LIKE '%:%'
                 """)
 
+                # Ek dinamik düzeltmeler: 'Görev' kolonuna bağlı
+                try:
+                    cols_df = pd.read_sql_query("PRAGMA table_info(naeron_ucuslar)", conn)
+                    def _ascii_norm(s):
+                        try:
+                            s1 = unicodedata.normalize('NFKD', str(s))
+                            s2 = s1.encode('ascii','ignore').decode().upper()
+                            return ''.join(ch for ch in s2 if 'A' <= ch <= 'Z')
+                        except Exception:
+                            return str(s).upper()
+                    gorev_real = next((n for n in cols_df['name'] if _ascii_norm(n) == 'GOREV'), 'Görev')
+                except Exception:
+                    gorev_real = 'Görev'
+                gorev_col = f'"{gorev_real}"'
+
+                # DIFF.(SE) -> DIFF(SE)
+                sql_statements.append(f"UPDATE naeron_ucuslar SET {gorev_col} = 'DIFF(SE)' WHERE {gorev_col} = 'DIFF.(SE)'")
+                # EĞT.TKR.(SE) (boşluksuz) -> EGT. TKR. (SE)
+                sql_statements.append(f"UPDATE naeron_ucuslar SET {gorev_col} = 'EGT. TKR. (SE)' WHERE {gorev_col} = 'EĞT.TKR.(SE)'")
+
+                # Ek düzeltme: DIFF.(SE) -> DIFF(SE)
+                sql_statements.append("UPDATE naeron_ucuslar SET \"G��rev\" = 'DIFF(SE)' WHERE \"G��rev\" = 'DIFF.(SE)'")
+
+                # Ek düzeltme: EĞT.TKR.(SE) -> EGT. TKR. (SE) (boşluksuz varyantı da düzelt)
+                sql_statements.append("UPDATE naeron_ucuslar SET \"G��rev\" = 'EGT. TKR. (SE)' WHERE \"G��rev\" = 'E�?T.TKR.(SE)'")
+
                 for stmt in sql_statements:
-                    cursor.execute(stmt)
+                    try:
+                        cursor.execute(stmt)
+                    except Exception:
+                        pass
                 conn.commit()
                 st.success("✅ Tüm toplu düzeltmeler tamamlandı.")
                 st.rerun()

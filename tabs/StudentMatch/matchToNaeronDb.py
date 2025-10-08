@@ -119,6 +119,13 @@ def plan_naeron_eslestirme(st, conn):
         def normalize_task(name):
             return re.sub(r"[\s\-]+", "", str(name)).upper()
 
+        # PIF/SIF normalize (boşluk, (C), tire kaldır, upper) – tüm aşağıdaki kontrollerde ortak kullanılacak
+        def normalize_pif(gorev):
+            try:
+                return str(gorev).replace(' ', '').replace('(C)', '').replace('-', '').upper()
+            except Exception:
+                return ""
+
         df_naeron_all["gorev_norm"] = df_naeron_all["Görev"].apply(normalize_task)
 
         # Seçilen öğrenciye göre filtrele
@@ -346,9 +353,6 @@ def plan_naeron_eslestirme(st, conn):
             donem_tipi = donem_tipi_getir(secilen_donem)
 
             if donem_tipi == "ENTEGRE":
-                def normalize_pif(gorev):
-                    return str(gorev).replace(' ', '').replace('(C)', '').replace('-', '').upper()
-
                 mask_pif_sim = df_ogrenci["gorev_ismi"].apply(lambda x: normalize_pif(x) in [normalize_pif(g) for g in PIF_sim_gorevler])
                 df_pif_sim = df_ogrenci[mask_pif_sim].copy()
 
@@ -380,9 +384,6 @@ def plan_naeron_eslestirme(st, conn):
             ]
 
             if donem_tipi == "ENTEGRE":
-                def normalize_pif(gorev):
-                    return str(gorev).replace(' ', '').replace('(C)', '').replace('-', '').upper()
-
                 mask_pif_ac = df_ogrenci["gorev_ismi"].apply(lambda x: normalize_pif(x) in [normalize_pif(g) for g in PIF_ac_gorevler])
                 df_pif_ac = df_ogrenci[mask_pif_ac].copy()
 
@@ -409,9 +410,9 @@ def plan_naeron_eslestirme(st, conn):
             ]
             
             def normalize_Sif(gorev):
-                return str(gorev).replace(' ', '').replace('(C)', '').replace('-', '').upper()
+                return normalize_pif(gorev)
 
-            mask_pif = df_ogrenci["gorev_ismi"].apply(lambda x: normalize_Sif(x) in [normalize_Sif(g) for g in sif_gorevler])
+            mask_pif = df_ogrenci["gorev_ismi"].apply(lambda x: normalize_pif(x) in [normalize_pif(g) for g in sif_gorevler])
             df_sif = df_ogrenci[mask_pif].copy()
 
             pif_toplam_gercek = df_sif["gerceklesen_saat_ondalik"].sum()
