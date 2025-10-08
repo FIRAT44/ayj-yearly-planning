@@ -83,7 +83,13 @@ def _only_negative_value(val) -> str:
         return ""
     if text in {"-00:00", "-0:00", "00:00", "0:00"}:
         return ""
-    return text if text.startswith("-") else ""
+    if not text.startswith("-"):
+        return ""
+    abs_part = text[1:].strip()
+    td_abs = saat_stringini_timedeltaya_cevir(abs_part)
+    if td_abs < timedelta(hours=1):
+        return ""
+    return text
 
 def _signed_value_or_blank(val) -> str:
     """Pozitif ve negatif değerleri korur, sıfırları boş bırakır."""
