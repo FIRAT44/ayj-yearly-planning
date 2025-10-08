@@ -974,6 +974,12 @@ def tab_gorev_revizyonu(st, conn: sqlite3.Connection) -> None:
             value=False,
             key="revize_bulk_duration_include_phase",
         )
+    apply_all_terms = st.checkbox(
+        "Tüm dönemlerde uygula",
+        value=False,
+        help="Seçilirse aynı görev tüm dönemlerdeki tüm öğrenciler için güncellenir.",
+        key="revize_bulk_duration_all_terms",
+    )
 
     sure_default = _normalize_sure(reference_row.get("sure"))
     new_duration_input = st.text_input(
@@ -999,22 +1005,24 @@ def tab_gorev_revizyonu(st, conn: sqlite3.Connection) -> None:
             st.warning("Geçerli bir süre (HH:MM) değeri girin.")
             return
 
+        base_query = """
+            SELECT rowid, donem, ogrenci, plan_tarihi, gorev_tipi, gorev_ismi, phase, sure
+            FROM ucus_planlari
+        """
+        params: list = []
+        if not apply_all_terms:
+            base_query += " WHERE donem = ?"
+            params.append(term_value)
+
         try:
-            df_term_all = pd.read_sql_query(
-                """
-                SELECT rowid, donem, ogrenci, plan_tarihi, gorev_tipi, gorev_ismi, phase, sure
-                FROM ucus_planlari
-                WHERE donem = ?
-                """,
-                conn,
-                params=[term_value],
-            )
+            df_term_all = pd.read_sql_query(base_query, conn, params=params)
         except Exception as exc:
-            st.error(f"Dönem verileri alınırken hata oluştu: {exc}")
+            st.error(f"Plan verileri alınırken hata oluştu: {exc}")
             return
 
         if df_term_all.empty:
-            st.warning("Seçilen döneme ait kayıt bulunamadı.")
+            warn_msg = "Geçerli kayıt bulunamadı." if apply_all_terms else "Seçilen döneme ait kayıt bulunamadı."
+            st.warning(warn_msg)
             return
 
         gorev_mask = (
@@ -1093,7 +1101,8 @@ def tab_gorev_revizyonu(st, conn: sqlite3.Connection) -> None:
             _write_log(conn, logs)
 
         unchanged_count = len(targets) - len(to_update)
-        st.success(f"{len(to_update)} kayıt güncellendi.")
+        scope_info = "tüm dönemlerde" if apply_all_terms else f"{term_value} döneminde"
+        st.success(f"{len(to_update)} kayıt {scope_info} güncellendi.")
         if unchanged_count > 0:
             st.info(f"{unchanged_count} kayıt zaten {new_duration_norm} olarak ayarlıydı.")
         st.rerun()
