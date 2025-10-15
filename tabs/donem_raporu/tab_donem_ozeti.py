@@ -17,6 +17,9 @@ from tabs.utils.ozet_utils2 import (
 )
 
 EXCLUDED_GOREVLER = {"CPL ST(ME)", "IR ST(ME)"}
+EXCLUDED_GOREVLER_NORMALIZED = {
+    re.sub(r"[^0-9A-Z]+", "", gorev.upper()) for gorev in EXCLUDED_GOREVLER
+}
 STUDENT_COLUMN_LABEL = "ÖĞRENCİ"
 
 
@@ -26,13 +29,28 @@ def filtrele_donem_raporu_gorevleri(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df is None:
         return pd.DataFrame()
-    if df.empty or "gorev_tipi" not in df.columns:
+    if df.empty:
         return df.copy()
-    gorev_serisi = df["gorev_tipi"].fillna("").astype(str).str.strip()
-    mask = gorev_serisi.isin(EXCLUDED_GOREVLER)
-    if not mask.any():
+
+    candidate_cols = [
+        col for col in ("gorev_tipi", "gorev_ismi", "gorev", "gorev_adi")
+        if col in df.columns
+    ]
+    if not candidate_cols:
         return df.copy()
-    return df.loc[~mask].copy()
+
+    def _is_excluded(value: str) -> bool:
+        key = re.sub(r"[^0-9A-Z]+", "", str(value).upper())
+        return key in EXCLUDED_GOREVLER_NORMALIZED
+
+    exclusion_mask = pd.Series(False, index=df.index)
+    for col in candidate_cols:
+        col_series = df[col].fillna("").astype(str)
+        exclusion_mask = exclusion_mask | col_series.map(_is_excluded)
+
+    if not exclusion_mask.any():
+        return df.copy()
+    return df.loc[~exclusion_mask].copy()
 
 def anlasilir_saat_formatina_cevir(td: timedelta) -> str:
     """Timedelta objesini HH:MM formatında bir string'e çevirir."""
@@ -202,35 +220,53 @@ def normalize_plan_gercek_kolonlari(df: pd.DataFrame) -> pd.DataFrame:
 
     return work
 
+def hazirla_eksik_kayitlar(df: pd.DataFrame) -> pd.DataFrame:
+    """🔴 Eksik durumundaki kayıtları pozitif eksik sürelerle döndürür."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = filtrele_donem_raporu_gorevleri(df)
+    if df.empty:
+        return pd.DataFrame()
+    required = {'durum', 'sure', 'gerceklesen_sure'}
+    if not required.issubset(df.columns):
+        return pd.DataFrame()
+
+    eksik_df = df[df['durum'] == '🔴 Eksik'].copy()
+    if eksik_df.empty:
+        return pd.DataFrame()
+
+    eksik_df['planlanan_td'] = eksik_df['sure'].apply(saat_stringini_timedeltaya_cevir)
+    eksik_df['gerceklesen_td'] = eksik_df['gerceklesen_sure'].apply(saat_stringini_timedeltaya_cevir)
+    eksik_df['eksik_td'] = eksik_df['planlanan_td'] - eksik_df['gerceklesen_td']
+    eksik_df['eksik_td'] = eksik_df['eksik_td'].clip(lower=pd.Timedelta(0))
+    eksik_df = eksik_df[eksik_df['eksik_td'] > pd.Timedelta(0)]
+    if 'gorev_tipi' in eksik_df.columns:
+        eksik_df['gorev_tipi'] = eksik_df['gorev_tipi'].astype(str).str.strip()
+    return eksik_df
+
 def hazirla_eksik_fark_tablosu(df_term: pd.DataFrame) -> pd.DataFrame:
     """Verilen dönem datasından eksik fark tablosu hazırlar."""
-    if df_term is None or df_term.empty:
+    eksik_detay = hazirla_eksik_kayitlar(df_term)
+    if eksik_detay.empty:
         return pd.DataFrame()
-    if not {'ogrenci', 'gorev_tipi', 'sure', 'gerceklesen_sure'}.issubset(df_term.columns):
-        return pd.DataFrame()
-
-    df_local = df_term[df_term['gorev_tipi'].notna()].copy()
-    if df_local.empty:
+    if 'ogrenci' not in eksik_detay.columns or 'gorev_tipi' not in eksik_detay.columns:
         return pd.DataFrame()
 
-    df_local['planlanan_saat'] = df_local['sure'].apply(saat_stringini_timedeltaya_cevir)
-    df_local['gerceklesen_saat'] = df_local['gerceklesen_sure'].apply(saat_stringini_timedeltaya_cevir)
-
-    ozet = df_local.groupby(['ogrenci', 'gorev_tipi']).agg(
-        planlanan_td=('planlanan_saat', 'sum'),
-        gerceklesen_td=('gerceklesen_saat', 'sum')
-    ).reset_index()
+    ozet = (
+        eksik_detay
+        .groupby(['ogrenci', 'gorev_tipi'], dropna=True)['eksik_td']
+        .sum()
+        .reset_index()
+    )
     if ozet.empty:
         return pd.DataFrame()
-
-    ozet['Fark'] = (ozet['gerceklesen_td'] - ozet['planlanan_td']).apply(anlasilir_saat_formatina_cevir)
 
     pivot = ozet.pivot_table(
         index='ogrenci',
         columns='gorev_tipi',
-        values='Fark',
-        aggfunc='first',
-        fill_value="00:00"
+        values='eksik_td',
+        aggfunc='sum',
+        fill_value=pd.Timedelta(0)
     )
     if pivot.empty:
         return pd.DataFrame()
@@ -243,16 +279,17 @@ def hazirla_eksik_fark_tablosu(df_term: pd.DataFrame) -> pd.DataFrame:
     if gorev_tipleri:
         pivot = pivot[gorev_tipleri]
 
+    pivot = pivot.applymap(anlasilir_saat_formatina_cevir)
+    pivot = pivot.replace("00:00", "")
+
     fark_table = pivot.reset_index().rename(columns={'ogrenci': STUDENT_COLUMN_LABEL})
     fark_columns = [col for col in fark_table.columns if col != STUDENT_COLUMN_LABEL]
-    if fark_columns:
-        fark_table[fark_columns] = fark_table[fark_columns].applymap(_only_negative_value)
 
     result = _ekle_toplam_satir_sutun(fark_table, fark_columns)
-    if fark_columns:
-        result[fark_columns] = result[fark_columns].applymap(_strip_leading_minus)
     if 'toplam' in result.columns:
-        result['toplam'] = result['toplam'].map(_strip_leading_minus)
+        result['toplam'] = result['toplam'].replace("00:00", "").map(_strip_leading_minus)
+    if fark_columns:
+        result[fark_columns] = result[fark_columns].replace("00:00", "")
     return result
 
 
@@ -383,6 +420,9 @@ def hazirla_toplam_fark_tablosu(df_term: pd.DataFrame) -> pd.DataFrame:
     """Verilen dönem datasından tüm fark tablosu (pozitif + negatif) hazırlar."""
     if df_term is None or df_term.empty:
         return pd.DataFrame()
+    df_term = filtrele_donem_raporu_gorevleri(df_term)
+    if df_term.empty:
+        return pd.DataFrame()
     if not {'ogrenci', 'gorev_tipi', 'sure', 'gerceklesen_sure'}.issubset(df_term.columns):
         return pd.DataFrame()
 
@@ -444,6 +484,15 @@ def fark_hucre_renk(sure_str: str) -> str:
     if clean.startswith("-"):
         return "background-color: #fde2e1; color: #4a0f0d; font-weight: 600;"
     return "background-color: #d9f5dd; color: #0b2911; font-weight: 600;"
+
+def eksik_hucre_renk(sure_str: str) -> str:
+    """Eksik sürelerin görüldüğü hücreleri renklendirir."""
+    if not isinstance(sure_str, str):
+        return ""
+    clean = sure_str.strip()
+    if not clean or clean in {"00:00"}:
+        return ""
+    return "background-color: #fde2e1; color: #4a0f0d; font-weight: 600;"
 
 def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
     """
@@ -520,22 +569,72 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
     st.markdown("---")
     st.markdown(f"#### ⏱️ **{secilen_donem}** Dönemi Toplam Eksik Görev Süreleri")
 
-    df_eksik_gorevler = df[df['durum'] == '🔴 Eksik'].copy()
-    
-    if not df_eksik_gorevler.empty:
-        df_eksik_gorevler['sure_timedelta'] = df_eksik_gorevler['sure'].apply(saat_stringini_timedeltaya_cevir)
-        eksik_sureler_toplami = df_eksik_gorevler.groupby('gorev_tipi')['sure_timedelta'].sum().reset_index()
+    eksik_detay_df = hazirla_eksik_kayitlar(df)
+
+    if not eksik_detay_df.empty:
+        eksik_sureler_toplami = (
+            eksik_detay_df.groupby('gorev_tipi', dropna=True)['eksik_td']
+            .sum()
+            .reset_index()
+            .sort_values('eksik_td', ascending=False)
+        )
 
         col_count = 4
         cols = st.columns(col_count)
         i = 0
         for _, row in eksik_sureler_toplami.iterrows():
-            if row['sure_timedelta'] > timedelta(0):
-                with cols[i % col_count]:
-                    st.metric(label=row['gorev_tipi'], value=anlasilir_saat_formatina_cevir(row['sure_timedelta']))
-                i += 1
+            eksik_td = row['eksik_td']
+            if not isinstance(eksik_td, pd.Timedelta):
+                eksik_td = pd.to_timedelta(eksik_td)
+            if eksik_td <= pd.Timedelta(0):
+                continue
+            with cols[i % col_count]:
+                st.metric(label=str(row.get('gorev_tipi', 'Görev')), value=anlasilir_saat_formatina_cevir(eksik_td))
+            i += 1
         if i == 0:
             st.success("Bu dönemde planlanmış süresi olan eksik görev bulunmamaktadır.")
+        else:
+            eksik_kayitlar = eksik_detay_df.sort_values('eksik_td', ascending=False).copy()
+            eksik_kayitlar['Planlanan'] = eksik_kayitlar['planlanan_td'].apply(anlasilir_saat_formatina_cevir)
+            eksik_kayitlar['Gerçekleşen'] = eksik_kayitlar['gerceklesen_td'].apply(anlasilir_saat_formatina_cevir)
+            eksik_kayitlar['Eksik Süre'] = eksik_kayitlar['eksik_td'].apply(anlasilir_saat_formatina_cevir)
+
+            gorev_isim_kolon = None
+            if 'gorev_ismi' in eksik_kayitlar.columns:
+                gorev_isim_kolon = 'gorev_ismi'
+            elif 'gorev' in eksik_kayitlar.columns:
+                gorev_isim_kolon = 'gorev'
+
+            eksik_kayitlar = eksik_kayitlar.rename(columns={'ogrenci': STUDENT_COLUMN_LABEL, 'gorev_tipi': 'Görev Tipi'})
+
+            if gorev_isim_kolon:
+                eksik_kayitlar['Görev İsmi'] = (
+                    eksik_kayitlar[gorev_isim_kolon]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+
+            display_columns = [STUDENT_COLUMN_LABEL, 'Görev Tipi']
+            if 'Görev İsmi' in eksik_kayitlar.columns:
+                display_columns.append('Görev İsmi')
+            display_columns.extend(['Planlanan', 'Gerçekleşen', 'Eksik Süre'])
+            st.markdown("#### Eksik görev listesi (öğrenci bazında)")
+            st.dataframe(
+                eksik_kayitlar[display_columns],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            term_eksik_ozet = hazirla_eksik_fark_tablosu(df)
+            if not term_eksik_ozet.empty:
+                eksik_columns = [col for col in term_eksik_ozet.columns if col != STUDENT_COLUMN_LABEL]
+                term_eksik_ozet = term_eksik_ozet.replace("00:00", "")
+                eksik_styler = term_eksik_ozet.style.applymap(eksik_hucre_renk, subset=eksik_columns)
+                if hasattr(eksik_styler, "hide"):
+                    eksik_styler = eksik_styler.hide(axis="index")
+                st.markdown("#### Farklar (Görev Tipi Bazlı - Eksikler)")
+                st.dataframe(eksik_styler, use_container_width=True)
     else:
         st.success("Bu dönemde tamamlanmamış görev bulunmamaktadır.")
 
@@ -625,20 +724,6 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
             fark_columns = [col for col in fark_table_full.columns if col != STUDENT_COLUMN_LABEL]
 
             if fark_columns:
-
-                # Negatif farkları gösteren tablo
-                fark_table_neg = fark_table_full.copy()
-                fark_table_neg[fark_columns] = fark_table_neg[fark_columns].applymap(_only_negative_value)
-                fark_table_neg_disp = _ekle_toplam_satir_sutun(fark_table_neg, fark_columns)
-                neg_style_cols = fark_columns + ['toplam']
-
-                fark_neg_styler = fark_table_neg_disp.style.applymap(fark_hucre_renk, subset=neg_style_cols)
-                if hasattr(fark_neg_styler, "hide"):
-                    fark_neg_styler = fark_neg_styler.hide(axis="index")
-
-                st.markdown("#### Farklar (Görev Tipi Bazlı - Eksikler)")
-                st.dataframe(fark_neg_styler, use_container_width=True)
-
                 fark_table_all = fark_table_full.copy()
                 fark_table_all[fark_columns] = fark_table_all[fark_columns].applymap(_signed_value_or_blank)
                 fark_table_all_disp = _ekle_toplam_satir_sutun(fark_table_all, fark_columns)
@@ -651,7 +736,6 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
                 st.dataframe(fark_all_styler, use_container_width=True)
 
                 excel_sheets_negatif: list[tuple[str, pd.DataFrame]] = []
-                excel_sheets_full: list[tuple[str, pd.DataFrame]] = []
                 if not tum_df_all.empty:
                     used_sheet_names: set[str] = set()
 

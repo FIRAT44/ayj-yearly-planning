@@ -99,6 +99,7 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'SXC-9'  WHERE \"Görev\" = 'SXC-9 (C)'",
                     # CR-S/T
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'CR-S/T' WHERE \"Görev\" = 'ME CR ST'",
+                    "UPDATE naeron_ucuslar SET \"Görev\" = 'CR-S/T' WHERE \"Görev\" = 'CR ST'   AND \"Öğrenci Pilot\" LIKE '136%'",
 
                     #IR ST(ME)
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'IR ST(ME)' WHERE \"Görev\" = 'MEP IR ST'",
@@ -108,6 +109,7 @@ def tab_naeron_goruntule(st):
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-A-12PT' WHERE \"Görev\" = 'MCC-A-12 PT' AND \"Öğrenci Pilot\" LIKE '128%'",
                     "UPDATE naeron_ucuslar SET \"Görev\" = 'MCC-12PT' WHERE \"Görev\" = 'MCC-A-12PT'   AND \"Öğrenci Pilot\" LIKE '131%'",
                     
+
 
 
 
