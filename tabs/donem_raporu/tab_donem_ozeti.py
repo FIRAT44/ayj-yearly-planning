@@ -21,6 +21,33 @@ EXCLUDED_GOREVLER_NORMALIZED = {
     re.sub(r"[^0-9A-Z]+", "", gorev.upper()) for gorev in EXCLUDED_GOREVLER
 }
 STUDENT_COLUMN_LABEL = "ÖĞRENCİ"
+DESIRED_GOREV_ORDER = [
+    "SE DUAL DA",
+    "SE PIC",
+    "SE SIM",
+    "SE DUAL SONACA",
+    "ME SIM",
+    "ME DUAL",
+    "AUPRT",
+    "MCC SIM",
+]
+_GOREV_ORDER_MAP = {name.upper(): idx for idx, name in enumerate(DESIRED_GOREV_ORDER)}
+EXCEL_GOREV_RENAME = {
+    "SE DUAL DA": "SE DUAL DA-20",
+    "ME DUAL": "ME U\u00C7AK",
+    "toplam": "TOPLAM",
+    "Toplam": "TOPLAM",
+}
+
+def _gorev_tipi_order_key(gorev: str) -> tuple:
+    normalized = (gorev or "").strip().upper()
+    primary = _GOREV_ORDER_MAP.get(normalized, len(_GOREV_ORDER_MAP))
+    return (primary, gorev_tipi_slugla(gorev))
+
+def _rename_columns_for_excel(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    return df.rename(columns=EXCEL_GOREV_RENAME)
 
 
 def filtrele_donem_raporu_gorevleri(df: pd.DataFrame) -> pd.DataFrame:
@@ -275,7 +302,7 @@ def hazirla_eksik_fark_tablosu(df_term: pd.DataFrame) -> pd.DataFrame:
         col for col in pivot.columns
         if isinstance(col, str) and col.strip() and col.strip().upper() != "THEO"
     ]
-    gorev_tipleri.sort(key=lambda g: gorev_tipi_slugla(g))
+    gorev_tipleri.sort(key=_gorev_tipi_order_key)
     if gorev_tipleri:
         pivot = pivot[gorev_tipleri]
 
@@ -458,7 +485,7 @@ def hazirla_toplam_fark_tablosu(df_term: pd.DataFrame) -> pd.DataFrame:
         col for col in pivot.columns
         if isinstance(col, str) and col.strip() and col.strip().upper() != "THEO"
     ]
-    gorev_tipleri.sort(key=lambda g: gorev_tipi_slugla(g))
+    gorev_tipleri.sort(key=_gorev_tipi_order_key)
     if gorev_tipleri:
         pivot = pivot[gorev_tipleri]
 
@@ -514,6 +541,14 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
 
     secilen_donem = st.selectbox("Özetini görmek istediğiniz dönemi seçin:", donem_listesi)
 
+    mevcut_donemler = [d for d in donem_listesi if d]
+    dislanacak_donemler = st.multiselect(
+        "Excel ve ZIP indirmelerinde dahil etmeyeceğiniz dönemleri seçin",
+        options=mevcut_donemler,
+        help="Bu listede seçilen dönemler toplu Excel/ZIP çıktılarında hariç tutulur.",
+        key="donem_ozeti_exclude_terms",
+    )
+
     if not secilen_donem:
         st.info("Lütfen bir dönem seçin.")
         return
@@ -556,6 +591,16 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
 
     tum_df_all = normalize_plan_gercek_kolonlari(pd.concat(all_data_frames, ignore_index=True))
     tum_df_all = filtrele_donem_raporu_gorevleri(tum_df_all)
+
+    dislanacak_kume = set(dislanacak_donemler)
+    if dislanacak_kume:
+        export_df_all = tum_df_all[~tum_df_all['donem'].isin(dislanacak_kume)].copy()
+    else:
+        export_df_all = tum_df_all.copy()
+    export_donemler = (
+        sorted(export_df_all['donem'].dropna().unique().tolist(), key=lambda x: str(x))
+        if not export_df_all.empty else []
+    )
     if tum_df_all.empty:
         st.warning("İşlenecek plan verisi bulunamadı.")
         return
@@ -674,7 +719,7 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
                 gorev for gorev in pivot_table.columns.get_level_values(1).unique()
                 if isinstance(gorev, str) and gorev.strip() and gorev.strip().upper() != "THEO"
             ]
-            gorev_tipleri.sort(key=lambda g: gorev_tipi_slugla(g))
+            gorev_tipleri.sort(key=_gorev_tipi_order_key)
 
             if gorev_tipleri:
                 metrics_order = ("Gerceklesen", "Planlanan", "Fark")
@@ -717,7 +762,7 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
                 col for col in fark_pivot.columns
                 if isinstance(col, str) and col.strip() and col.strip().upper() != "THEO"
             ]
-            gorev_tipleri_fark.sort(key=lambda g: gorev_tipi_slugla(g))
+            gorev_tipleri_fark.sort(key=_gorev_tipi_order_key)
             if gorev_tipleri_fark:
                 fark_pivot = fark_pivot[gorev_tipleri_fark]
             fark_table_full = fark_pivot.reset_index().rename(columns={'ogrenci': STUDENT_COLUMN_LABEL})
@@ -736,22 +781,26 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
                 st.dataframe(fark_all_styler, use_container_width=True)
 
                 excel_sheets_negatif: list[tuple[str, pd.DataFrame]] = []
-                if not tum_df_all.empty:
+                if not export_df_all.empty:
                     used_sheet_names: set[str] = set()
 
-                    toplam_negatif_df = hazirla_eksik_fark_tablosu(tum_df_all)
+                    toplam_negatif_df = _rename_columns_for_excel(
+                        hazirla_eksik_fark_tablosu(export_df_all)
+                    )
                     if not toplam_negatif_df.empty:
                         toplam_negatif_sheet = _sanitize_sheet_name("TOPLAM", used_sheet_names)
                         used_sheet_names.add(toplam_negatif_sheet)
                         excel_sheets_negatif.append((toplam_negatif_sheet, toplam_negatif_df))
 
-                    for term in sorted(tum_df_all['donem'].dropna().unique(), key=lambda x: str(x)):
-                        term_df = tum_df_all[tum_df_all['donem'] == term].copy()
-                        sheet_df = hazirla_eksik_fark_tablosu(term_df)
+                    for term in export_donemler:
+                        term_df = export_df_all[export_df_all['donem'] == term].copy()
+                        sheet_df = _rename_columns_for_excel(hazirla_eksik_fark_tablosu(term_df))
                         if not sheet_df.empty:
                             sheet_name = _sanitize_sheet_name(term, used_sheet_names)
                             used_sheet_names.add(sheet_name)
                             excel_sheets_negatif.append((sheet_name, sheet_df))
+                elif dislanacak_kume and not tum_df_all.empty:
+                    st.info("Seçtiğiniz dışlama ayarları nedeniyle Excel için dönem bulunamadı.")
 
                 if excel_sheets_negatif:
                     buffer = BytesIO()
@@ -777,17 +826,20 @@ def render_donem_ozeti_tab(st, conn: sqlite3.Connection):
         st.dataframe(ozet_detayli)
     else:
         graph_exports: list[tuple[str, bytes]] = []
-        if 'tum_df_all' in locals() and isinstance(tum_df_all, pd.DataFrame) and not tum_df_all.empty:
-            for term in sorted(tum_df_all['donem'].dropna().unique(), key=lambda x: str(x)):
-                term_df = tum_df_all[tum_df_all['donem'] == term].copy()
+        if not export_df_all.empty:
+            for term in export_donemler:
+                term_df = export_df_all[export_df_all['donem'] == term].copy()
                 if not term_df.empty:
                     graph_exports.extend(_generate_graph_exports(term_df, term))
-        else:
+        elif secilen_donem not in dislanacak_kume:
             graph_exports.extend(_generate_graph_exports(df, secilen_donem))
         assets: list[tuple[str, bytes]] = []
         if excel_neg_bytes:
             assets.append((excel_neg_filename, excel_neg_bytes))
         assets.extend(graph_exports)
+
+        if not assets and dislanacak_kume:
+            st.info("Seçilen dışlama ayarları nedeniyle indirilecek dosya oluşturulmadı.")
 
         if assets:
             zip_buffer = BytesIO()

@@ -2,6 +2,7 @@ import re
 import pandas as pd
 import sqlite3
 from datetime import datetime
+from collections import deque
 
 
 def eslesen_pic_sure_sirali(df_plan, df_naeron):
@@ -33,11 +34,53 @@ def eslesen_pic_sure_sirali(df_plan, df_naeron):
     return df_plan
 
 def eslesen_normal_sure(df_plan, df_naeron):
+    def _normalize_fam(name):
+        return re.sub(r"\s+", "", str(name or "")).upper()
+
+    fam_variants_norm = {_normalize_fam(v) for v in ["FAM.(SIM)", "FAMILIARIZATION(SIM)"]}
+    mask_non_pic = ~df_plan["gorev_ismi"].str.upper().str.contains("PIC", na=False)
+    fam_plan_mask = mask_non_pic & df_plan["gorev_ismi"].apply(lambda x: _normalize_fam(x) in fam_variants_norm)
+
+    fam_segments = deque()
+    if fam_plan_mask.any():
+        df_naeron_fam = df_naeron[df_naeron["Görev"].apply(lambda x: _normalize_fam(x) in fam_variants_norm)].copy()
+        if not df_naeron_fam.empty:
+            if "Uçuş Tarihi 2" in df_naeron_fam.columns:
+                df_naeron_fam = df_naeron_fam.sort_values("Uçuş Tarihi 2")
+            fam_segments = deque(
+                h for h in (to_saat(bt) for bt in df_naeron_fam["Block Time"].fillna("00:00"))
+                if h > 0
+            )
+
+        def allocate_hours(requested):
+            allocated = 0.0
+            epsilon = 1e-6
+            requested = float(requested)
+            while requested > epsilon and fam_segments:
+                current = fam_segments.popleft()
+                take = min(requested, current)
+                allocated += take
+                requested -= take
+                remainder = current - take
+                if remainder > epsilon:
+                    fam_segments.appendleft(remainder)
+            return allocated
+
+        for idx in df_plan.loc[fam_plan_mask].index:
+            plan_hours = df_plan.at[idx, "planlanan_saat_ondalik"]
+            if pd.isna(plan_hours) or plan_hours <= 0:
+                plan_hours = 1.0
+            df_plan.at[idx, "gerceklesen_saat_ondalik"] = allocate_hours(plan_hours)
+
+    regular_mask = mask_non_pic & ~fam_plan_mask
+
     def match(gorev):
-        eş = df_naeron[df_naeron["Görev"] == gorev]
-        return eş["Block Time"].apply(to_saat).sum() if not eş.empty else 0
-    mask = ~df_plan["gorev_ismi"].str.upper().str.contains("PIC")
-    df_plan.loc[mask, "gerceklesen_saat_ondalik"] = df_plan.loc[mask, "gorev_ismi"].apply(match)
+        eslesme = df_naeron[df_naeron["Görev"] == gorev]
+        return eslesme["Block Time"].apply(to_saat).sum() if not eslesme.empty else 0
+
+    df_plan.loc[regular_mask, "gerceklesen_saat_ondalik"] = (
+        df_plan.loc[regular_mask, "gorev_ismi"].apply(match)
+    )
     return df_plan
 
 def durum_pic_renk(row):

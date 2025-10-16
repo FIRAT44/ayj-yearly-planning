@@ -11,7 +11,16 @@ def tab_taslak_coklu_gorev(conn):
         st.info("Henüz taslak görevli plan oluşturulmadı.")
         return
 
-    gorev_tipleri = ['AUPRT', 'MCC SIM', 'ME DUAL', 'ME SIM', 'SE DUAL SONACA', 'SE PIC', 'SE DUAL DA', 'SE SIM']
+    gorev_tipleri = [
+        'SE DUAL DA',
+        'SE PIC',
+        'SE SIM',
+        'SE DUAL SONACA',
+        'ME SIM',
+        'ME DUAL',
+        'AUPRT',
+        'MCC SIM',
+    ]
     secili_gorev_tipi = st.selectbox("Görev Tipini Seçiniz", gorev_tipleri)
 
     haftalik_tab, tarih_aralik_tab = st.tabs(["Haftalık Plan (Tümü)", "Belirli Tarih Aralığı"])

@@ -485,6 +485,198 @@ def tab_gorev_revizyonu(st, conn: sqlite3.Connection) -> None:
             st.warning(f"{len(to_log)} satır silindi.")
             st.rerun()
 
+    st.markdown("### Seili Gorevi Donem Genelinde Sil")
+    if not selected_ids:
+        st.info("Toplu donem silme icin yukaridaki tablodan referans olarak en az bir satir secin.")
+    else:
+        selected_rows_term = df_filtered[df_filtered[pk_col].isin(selected_ids)].copy()
+        if selected_rows_term.empty:
+            st.warning("Secilen satirlar bulunamadi; lutfen filtreleri kontrol edip tekrar deneyin.")
+        else:
+            term_ref_indices = list(range(len(selected_rows_term)))
+
+            def _format_term_delete_choice(idx: int) -> str:
+                row = selected_rows_term.iloc[idx]
+                term_txt = _normalize_text(row.get("donem"))
+                ogr_txt = _normalize_text(row.get("ogrenci"))
+                gorev_txt = _normalize_text(row.get("gorev_ismi"))
+                plan_txt = _normalize_plan_tarihi(row.get("plan_tarihi"))
+                sure_txt = _normalize_sure(row.get("sure"))
+                return (
+                    f"{term_txt or '(donem yok)'} | {ogr_txt or '(ogrenci yok)'} | "
+                    f"{gorev_txt or '(gorev ismi yok)'} | {plan_txt or '-'} ({sure_txt or '00:00'})"
+                )
+
+            term_selected_idx = st.selectbox(
+                "Referans görev (seçili satırlardan)",
+                term_ref_indices,
+                format_func=_format_term_delete_choice,
+                key="revize_delete_term_selection",
+            )
+
+            reference_row_term = selected_rows_term.iloc[term_selected_idx]
+            term_value_term = _normalize_text(reference_row_term.get("donem"))
+            if not term_value_term:
+                st.warning("Secilen gorevde donem bilgisi bulunamadi; donem bilgisi olan bir satir secin.")
+            else:
+                gorev_ismi_value_term = reference_row_term.get("gorev_ismi")
+                gorev_ismi_display_term = _normalize_text(gorev_ismi_value_term)
+                gorev_ismi_norm_term = normalize_task(gorev_ismi_value_term or "")
+                if not gorev_ismi_norm_term:
+                    st.warning("Secilen gorevde gorev ismi bulunamadi; gorev ismi dolu olan bir satir secin.")
+                else:
+                    gorev_tipi_value_term = (
+                        reference_row_term.get("gorev_tipi") if "gorev_tipi" in reference_row_term else ""
+                    )
+                    gorev_tipi_display_term = _normalize_text(gorev_tipi_value_term)
+                    gorev_tipi_norm_term = (
+                        normalize_task(gorev_tipi_value_term or "") if gorev_tipi_value_term else ""
+                    )
+                    phase_value_term = reference_row_term.get("phase") if "phase" in reference_row_term else ""
+                    phase_display_term = _normalize_text(phase_value_term)
+                    phase_norm_term = normalize_task(phase_value_term or "") if phase_value_term else ""
+
+                    st.caption(
+                        f"Donem: {term_value_term} | Gorev: {gorev_ismi_display_term or '-'}"
+                        + (f" | Gorev Tipi: {gorev_tipi_display_term}" if gorev_tipi_display_term else "")
+                        + (f" | Phase: {phase_display_term}" if phase_display_term else "")
+                    )
+
+                    include_type_term = False
+                    if gorev_tipi_norm_term:
+                        include_type_term = st.checkbox(
+                            "Gorev tipi eslesmesini kullan",
+                            value=True,
+                            key="revize_delete_term_include_type",
+                        )
+                    include_phase_term = False
+                    if phase_norm_term:
+                        include_phase_term = st.checkbox(
+                            "Phase eslesmesini kullan",
+                            value=False,
+                            key="revize_delete_term_include_phase",
+                        )
+
+                    delete_term_reason = st.text_input(
+                        "Silme sebebi (log icin) - donem genelinde",
+                        key="revize_delete_term_reason",
+                        placeholder="Opsiyonel",
+                    )
+                    delete_term_confirm = st.checkbox(
+                        "Donem genelinde silme islemini onayliyorum",
+                        key="revize_delete_term_confirm",
+                    )
+
+                    term_targets = pd.DataFrame()
+                    term_key_col: Optional[str] = None
+                    term_error: Optional[str] = None
+                    match_count = 0
+
+                    try:
+                        df_term_all = pd.read_sql_query(
+                            """
+                            SELECT rowid, donem, ogrenci, plan_tarihi, gorev_tipi, gorev_ismi, phase, sure
+                            FROM ucus_planlari
+                            WHERE donem = ?
+                            """,
+                            conn,
+                            params=[term_value_term],
+                        )
+                    except Exception as exc:
+                        term_error = str(exc)
+                        st.error(f"Donem verileri alinirken hata olustu: {exc}")
+                    else:
+                        if df_term_all.empty:
+                            st.info("Secilen doneme ait kayit bulunamadi.")
+                        else:
+                            df_term_all["gorev_norm"] = df_term_all["gorev_ismi"].fillna("").apply(normalize_task)
+                            mask = df_term_all["gorev_norm"] == gorev_ismi_norm_term
+                            if include_type_term and "gorev_tipi" in df_term_all.columns:
+                                df_term_all["gorev_tipi_norm"] = (
+                                    df_term_all["gorev_tipi"].fillna("").apply(normalize_task)
+                                )
+                                mask &= df_term_all["gorev_tipi_norm"] == gorev_tipi_norm_term
+                            if include_phase_term and "phase" in df_term_all.columns:
+                                df_term_all["phase_norm"] = df_term_all["phase"].fillna("").apply(normalize_task)
+                                mask &= df_term_all["phase_norm"] == phase_norm_term
+
+                            term_targets = df_term_all.loc[mask].copy()
+                            match_count = len(term_targets)
+                            if match_count:
+                                if "rowid" in term_targets.columns:
+                                    term_key_col = "rowid"
+                                elif "id" in term_targets.columns:
+                                    term_key_col = "id"
+                                st.info(f"Eslesen kayit sayisi: {match_count}")
+                            else:
+                                st.info("Bu filtrelerle eslesen gorev bulunamadi.")
+
+                    if st.button(
+                        "Seili gorevi donemdeki tum ogrencilerden sil",
+                        type="primary",
+                        key="revize_delete_term_button",
+                    ):
+                        if term_error:
+                            st.error("Silme islemi gerceklestirilemedi; donem kayitlari okunamadi.")
+                        elif not delete_term_confirm:
+                            st.warning("Silme islemini gerceklestirmek icin onay kutusunu isaretleyin.")
+                        elif match_count == 0:
+                            st.warning("Silinecek kayit bulunamadi.")
+                        elif not term_key_col:
+                            st.error("Kayit anahtari (rowid/id) bulunamadi; silme islemi yapilamiyor.")
+                        else:
+                            cur = conn.cursor()
+                            delete_logs: List[Dict] = []
+                            reason_base = delete_term_reason.strip()
+                            detail_parts = [
+                                f"Donem: {term_value_term}",
+                                f"Gorev: {gorev_ismi_display_term or '-'}",
+                            ]
+                            if include_type_term and gorev_tipi_display_term:
+                                detail_parts.append(f"Gorev Tipi: {gorev_tipi_display_term}")
+                            if include_phase_term and phase_display_term:
+                                detail_parts.append(f"Phase: {phase_display_term}")
+                            detail_text = " | ".join(detail_parts)
+
+                            for _, row in term_targets.iterrows():
+                                key_val = row.get(term_key_col)
+                                if pd.isna(key_val):
+                                    continue
+                                try:
+                                    key_int = int(key_val)
+                                except Exception:
+                                    continue
+
+                                cur.execute(
+                                    f"DELETE FROM ucus_planlari WHERE {term_key_col} = ?",
+                                    (key_int,),
+                                )
+                                log_reason = reason_base
+                                if detail_text:
+                                    log_reason = f"{log_reason} | {detail_text}" if log_reason else detail_text
+                                delete_logs.append(
+                                    {
+                                        "action": "delete",
+                                        "donem": row.get("donem", term_value_term),
+                                        "ogrenci": row.get("ogrenci", ""),
+                                        "plan_tarihi": row.get("plan_tarihi", ""),
+                                        "old_gorev_ismi": row.get("gorev_ismi", ""),
+                                        "new_gorev_ismi": "",
+                                        "old_sure": row.get("sure", ""),
+                                        "new_sure": "",
+                                        "reason": log_reason,
+                                    }
+                                )
+
+                            if delete_logs:
+                                conn.commit()
+                                _write_log(conn, delete_logs)
+                                st.success(f"{len(delete_logs)} kayit donemdeki tum ogrencilerden silindi.")
+                            else:
+                                conn.commit()
+                                st.info("Silinecek kayit bulunamadi veya silme islemi gerceklestirilemedi.")
+                            st.rerun()
+
     st.markdown("---")
     st.markdown("### Yeni Görev Ekle")
     ogrenci_list = sorted(df["ogrenci"].dropna().unique().tolist())
