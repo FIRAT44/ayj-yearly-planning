@@ -23,6 +23,7 @@ from tabs.tab_ihtiyac_analizi import tab_ihtiyac_analizi
 
 from tabs.tab_naeron_yukle import tab_naeron_yukle
 from tabs.tab_naeron_goruntule import tab_naeron_goruntule
+from tabs.tab_bakim_planlama import render_bakim_planlama
 
 
 from tabs.weekly_program import tab_ogrenci_ozet_sadece_eksik
@@ -34,6 +35,16 @@ from tabs.openMeteo.open_Meteo_connect_python import ruzgar_verisi_getir
 from tabs.fams_to_naeeron.tab_fams_to_naeron import tab_fams_to_naeron
 
 import os, json, hashlib
+
+
+def _get_query_params() -> dict:
+    try:
+        return dict(st.query_params)
+    except AttributeError:
+        try:
+            return st.experimental_get_query_params()
+        except Exception:
+            return {}
 
 
 
@@ -106,6 +117,19 @@ def _logout_sidebar():
 
 
 
+# 🚀 Doğrudan plan detay bağlantısı için kimlik doğrulamayı atla
+_QUERY_PARAMS = _get_query_params()
+if "flightPlanDetail" in _QUERY_PARAMS:
+    conn = sqlite3.connect("ucus_egitim.db", check_same_thread=False)
+    cursor = conn.cursor()
+    initialize_database(cursor)
+    from tabs.flight_program.flight_program_main import flight_program_main
+    flight_program_main(st, conn)
+    conn.close()
+    st.stop()
+
+
+
 # 🔐 Giriş Zorunluluğu
 if "user" not in st.session_state:
     _auth_ui()
@@ -153,6 +177,7 @@ ALL_MENUS = [
     "📊 Analiz ve Raporlar",
     "📂 Naeron İşlemleri",
     "🤖 Revize İşlemleri",
+    "📊 Bakım Planlama",
     # "✈️ Uçak Bazlı Uçuş Süresi Analizi",
     "Meteoroloji Verileri",
     "🔄 FAMS → Naeron",
@@ -169,7 +194,7 @@ if not menu:
     st.stop()
 
 if menu == "📋 Planlama":
-    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Planlama Revizyon","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"]
+    planlama_all_tabs = ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi", "Gerçekleşen Giriş","Planlama Revizyon","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi","Flight Program"]
     tab_sec = st.radio("📋 Planlama Sekmesi", _allowed_tabs("📋 Planlama", planlama_all_tabs), horizontal=True)
     
     
@@ -225,6 +250,10 @@ if menu == "📋 Planlama":
     elif tab_sec == "🧪 Taslak Plan Çoklu Görev":
         tab_taslak_coklu_gorev(conn)
     
+
+    elif tab_sec == "Flight Program":
+        from tabs.flight_program.flight_program_main import flight_program_main
+        flight_program_main(st, conn)
 
 
 elif menu == "MEYDAN İSTATİSTİKLERİ":
@@ -360,6 +389,10 @@ elif menu == "🤖 Revize İşlemleri":
         ileride_gidenleri_tespit_et(conn) 
 
 
+elif menu == "📊 Bakım Planlama":
+    bakim_all_tabs = ["1.AFML STATUS", "2. DATAMINE", "3. AC STATUS HEADER", "Uçak Ekle"]
+    allowed_bakim_tabs = _allowed_tabs("📊 Bakım Planlama", bakim_all_tabs)
+    render_bakim_planlama(st, allowed_bakim_tabs)
 
 # elif menu == "✈️ Uçak Bazlı Uçuş Süresi Analizi":
 #     tab_ucak_analiz(st)

@@ -6,17 +6,75 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "admin",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","📂 Naeron İşlemleri","🤖 Revize İşlemleri","Meteoroloji Verileri","🔄 FAMS → Naeron","Firebase Bağlantısı","Ayarlar","Aralıklı Gorev Hesaplama","MEYDAN İSTATİSTİKLERİ"],
+        "menus": [
+          "📋 Planlama",
+          "📊 Analiz ve Raporlar",
+          "📂 Naeron İşlemleri",
+          "📊 Bakım Planlama",
+          "🤖 Revize İşlemleri",
+          "Meteoroloji Verileri",
+          "🔄 FAMS → Naeron",
+          "Firebase Bağlantısı",
+          "Ayarlar",
+          "Aralıklı Gorev Hesaplama",
+          "MEYDAN İSTATİSTİKLERİ"
+        ],
         "tabs": {
-          "📋 Planlama": ["TASLAK OLUŞTURMA","Plan Oluştur","📚 Dönem ve Öğrenci Yönetimi","Gerçekleşen Giriş","Planlama Revizyon","🧪 Taslak Plan Çoklu Görev","Dönemler","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Uçaklar","Görev İsimleri","Uçuş Plan Karşılaştırması","OZ calculator","Phase Program"],
-          "📂 Naeron İşlemleri": ["Naeron Yükle","Naeron Verileri Filtrele","API ile NAERON veri çeekme"],
-          "🤖 Revize İşlemleri": ["Bireysel Revize Paneli","Genel tarama","Takvimden Revize","İleriden Giden Plan"],
-          "Meteoroloji Verileri": ["Meteoroloji Verileri"],
-          "🔄 FAMS → Naeron": ["FAMS → Naeron"],
-          "deneme": ["deneme"],
-          "Firebase Bağlantısı": ["Firebase Arayüzü"]
-          
+          "📋 Planlama": [
+            "TASLAK OLUŞTURMA",
+            "Plan Oluştur",
+            "📚 Dönem ve Öğrenci Yönetimi",
+            "Gerçekleşen Giriş",
+            "Planlama Revizyon",
+            "🧪 Taslak Plan Çoklu Görev",
+            "Dönemler",
+            "Eğitim Süresi",
+            "Flight Program"
+          ],
+          "📊 Analiz ve Raporlar": [
+            "Analiz İşlemleri Sayfası",
+            "Haftalık Program",
+            "Dönem Raporu",
+            "Tarihsel Analiz",
+            "Gelişim Takibi",
+            "Tekil Görev",
+            "İhtiyaç Analizi",
+            "Meydan İstatistikleri",
+            "Uçaklar",
+            "Görev İsimleri",
+            "Uçuş Plan Karşılaştırması",
+            "OZ calculator",
+            "Phase Program"
+          ],
+          "📂 Naeron İşlemleri": [
+            "Naeron Yükle",
+            "Naeron Verileri Filtrele",
+            "API ile NAERON veri çeekme"
+          ],
+          "🤖 Revize İşlemleri": [
+            "Bireysel Revize Paneli",
+            "Genel tarama",
+            "Takvimden Revize",
+            "İleriden Giden Plan"
+          ],
+          "📊 Bakım Planlama": [
+            "1.AFML STATUS",
+            "2. DATAMINE",
+            "3. AC STATUS HEADER",
+            "Uçak Ekle"
+          ],
+          "Meteoroloji Verileri": [
+            "Meteoroloji Verileri"
+          ],
+          "🔄 FAMS → Naeron": [
+            "FAMS → Naeron"
+          ],
+          "deneme": [
+            "deneme"
+          ],
+          "Firebase Bağlantısı": [
+            "Firebase Arayüzü"
+          ]
         }
       }
     },
@@ -26,49 +84,122 @@
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ","Dönem Raporu"],
+        "menus": [
+          "📋 Planlama",
+          "📊 Analiz ve Raporlar",
+          "MEYDAN İSTATİSTİKLERİ",
+          "Dönem Raporu"
+        ],
         "tabs": {
-          "📋 Planlama": ["Gerçekleşen Giriş","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Phase Program"]
+          "📋 Planlama": [
+            "Gerçekleşen Giriş",
+            "Eğitim Süresi"
+          ],
+          "📊 Analiz ve Raporlar": [
+            "Analiz İşlemleri Sayfası",
+            "Haftalık Program",
+            "Dönem Raporu",
+            "Tarihsel Analiz",
+            "Gelişim Takibi",
+            "Tekil Görev",
+            "İhtiyaç Analizi",
+            "Meydan İstatistikleri",
+            "Phase Program"
+          ]
         }
       }
     },
-        {
+    {
       "username": "BK",
       "name": "Eğitmen",
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","MEYDAN İSTATİSTİKLERİ"],
+        "menus": [
+          "📋 Planlama",
+          "📊 Analiz ve Raporlar",
+          "MEYDAN İSTATİSTİKLERİ"
+        ],
         "tabs": {
-          "📋 Planlama": ["Gerçekleşen Giriş","Dönemler","Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Analiz İşlemleri Sayfası","Haftalık Program","Dönem Raporu", "Tarihsel Analiz", "Gelişim Takibi", "Tekil Görev", "İhtiyaç Analizi","Meydan İstatistikleri","Phase Program"]
+          "📋 Planlama": [
+            "Gerçekleşen Giriş",
+            "Dönemler",
+            "Eğitim Süresi"
+          ],
+          "📊 Analiz ve Raporlar": [
+            "Analiz İşlemleri Sayfası",
+            "Haftalık Program",
+            "Dönem Raporu",
+            "Tarihsel Analiz",
+            "Gelişim Takibi",
+            "Tekil Görev",
+            "İhtiyaç Analizi",
+            "Meydan İstatistikleri",
+            "Phase Program"
+          ]
         }
       }
     },
-        {
+    {
       "username": "Planlama",
       "name": "Planlama Personeli",
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "instructor",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönem Raporu"],
+        "menus": [
+          "📋 Planlama",
+          "📊 Analiz ve Raporlar",
+          "Dönem Raporu"
+        ],
         "tabs": {
-          "📋 Planlama": ["Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Phase Program","Dönem Raporu"]
+          "📋 Planlama": [
+            "Eğitim Süresi"
+          ],
+          "📊 Analiz ve Raporlar": [
+            "Phase Program",
+            "Dönem Raporu"
+          ]
         }
       }
     },
-        {
+    {
       "username": "CC",
       "name": "Genel Müdür",
       "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
       "role": "Manager",
       "permissions": {
-        "menus": ["📋 Planlama","📊 Analiz ve Raporlar","Dönem Raporu"],
+        "menus": [
+          "📋 Planlama",
+          "📊 Analiz ve Raporlar",
+          "Dönem Raporu"
+        ],
         "tabs": {
-          "📋 Planlama": ["Eğitim Süresi"],
-          "📊 Analiz ve Raporlar": ["Phase Program","Dönem Raporu"]
+          "📋 Planlama": [
+            "Eğitim Süresi"
+          ],
+          "📊 Analiz ve Raporlar": [
+            "Phase Program",
+            "Dönem Raporu"
+          ]
+        }
+      }
+    },
+    {
+      "username": "UPK",
+      "name": "Bakım Planlama",
+      "password_hash": "sha256:03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+      "role": "UPK",
+      "permissions": {
+        "menus": [
+          "📊 Bakım Planlama"
+        ],
+        "tabs": {
+          "📊 Bakım Planlama": [
+            "1.AFML STATUS",
+            "2. DATAMINE",
+            "3. AC STATUS HEADER",
+            "Uçak Ekle"
+          ]
         }
       }
     }
